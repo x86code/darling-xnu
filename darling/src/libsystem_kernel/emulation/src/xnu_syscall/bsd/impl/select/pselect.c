@@ -18,6 +18,7 @@ long sys_pselect_nocancel(int nfds, void* rfds, void* wfds, void* efds, struct b
 	int ret;
 	struct linux_timeval ltv;
 	long data[2];
+	linux_sigset_t lmask;
 
 	if (timeout != NULL)
 	{
@@ -26,12 +27,10 @@ long sys_pselect_nocancel(int nfds, void* rfds, void* wfds, void* efds, struct b
 	}
 	if (mask != NULL)
 	{
-		linux_sigset_t lmask;
-
 		sigset_bsd_to_linux(mask, &lmask);
 
-		data[0] = (long)lmask;
-		data[1] = 65/8; // _NSIG / 8
+		data[0] = (long)&lmask;
+		data[1] = sizeof(lmask);
 	}
 
 	ret = LINUX_SYSCALL(__NR_pselect6, nfds, rfds, wfds, efds,
