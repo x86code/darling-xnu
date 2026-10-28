@@ -29,8 +29,15 @@ static struct SavedRef g_savedRefs[200];
 static int g_nextSavedRef = 0, g_nextGen = 0;
 static os_unfair_lock g_savedRefLock = OS_UNFAIR_LOCK_INIT;
 
-void __attribute__((weak)) os_unfair_lock_unlock(os_unfair_lock_t lock) {}
-void __attribute__((weak)) os_unfair_lock_lock(os_unfair_lock_t lock) {}
+// x86Code: libsystem_kernel must not export os_unfair_lock_{lock,unlock}: its weak
+// stubs shadowed libsystem_platform's real locks for foreign libSystems (iOS simulator).
+// Use libsimple's lock here instead (same 32-bit, zero-initialised layout).
+#include <libsimple/lock.h>
+_Static_assert(sizeof(os_unfair_lock) == sizeof(libsimple_lock_t), "lock layout");
+static void darling_unfair_lock_lock(os_unfair_lock_t lock) { libsimple_lock_lock((libsimple_lock_t*) lock); }
+static void darling_unfair_lock_unlock(os_unfair_lock_t lock) { libsimple_lock_unlock((libsimple_lock_t*) lock); }
+#define os_unfair_lock_lock darling_unfair_lock_lock
+#define os_unfair_lock_unlock darling_unfair_lock_unlock
 
 VISIBLE
 int sys_name_to_handle(const char* name, RefData* ref, int follow)

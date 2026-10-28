@@ -7,6 +7,6 @@
 
 long sys_guarded_open_np(const char* filename, uint64_t* guardid, unsigned int guardflags, int flags, unsigned int mode)
 {
-	*guardid = 0;
+	// x86Code: the guard is the caller's input (const guardid_t* in XNU); it was overwritten with 0
 	return sys_open(filename, flags, mode);
 }

@@ -16,9 +16,21 @@ extern int do_linux_fchmodat(int fd, const char* path, int mode, int flag);
 #define ATTR_CMN_MODTIME 0x400
 #define ATTR_CMN_CHGTIME 0x800
 #define ATTR_CMN_ACCTIME 0x1000
+#define ATTR_CMN_BKUPTIME 0x2000
+#define ATTR_CMN_FNDRINFO 0x4000
+#define ATTR_CMN_OWNERID 0x8000
+#define ATTR_CMN_GRPID 0x10000
 #define ATTR_CMN_ACCESSMASK 0x20000
+#define ATTR_CMN_FLAGS 0x40000
+#define ATTR_CMN_DATA_PROTECT_FLAGS 0x40000000
 
-#define COMMON_SUPPORTED (ATTR_CMN_MODTIME|ATTR_CMN_ACCTIME|ATTR_CMN_ACCESSMASK)
+// x86Code: accept (and ignore, Linux cannot set them) creation and change times, which the
+// code below already skips over. Foundation sets NSURLCreationDateKey on the new file when
+// atomically replacing one; EINVAL made e.g. every lsd database save fail.
+// x86Code: also the Finder info (stored as the com.apple.FinderInfo xattr, as HFS+/APFS expose it; FSNode's
+// setFinderInfo: failed with EINVAL, so PosterBoard could not create its poster "scratch" directories and drew no
+// wallpaper), and backup time, owner/group, BSD flags and data protection class (accepted, ignored)
+#define COMMON_SUPPORTED (ATTR_CMN_CRTIME|ATTR_CMN_MODTIME|ATTR_CMN_CHGTIME|ATTR_CMN_ACCTIME|ATTR_CMN_BKUPTIME|ATTR_CMN_FNDRINFO|ATTR_CMN_OWNERID|ATTR_CMN_GRPID|ATTR_CMN_ACCESSMASK|ATTR_CMN_FLAGS|ATTR_CMN_DATA_PROTECT_FLAGS)
 #define VOLUME_SUPPORTED 0
 #define DIR_SUPPORTED 0
 #define FILE_SUPPORTED 0
@@ -126,6 +138,35 @@ struct xnu_attrlist* alist, void *attributeBuffer, __SIZE_TYPE__ bufferSize, uns
 			return errno_linux_to_bsd(rv);
 		next += sizeof(struct timespec);
 	}
+	if (alist->commonattr & ATTR_CMN_BKUPTIME)
+		next += sizeof(struct timespec);
+	if (alist->commonattr & ATTR_CMN_FNDRINFO)
+	{
+		const char* fi = next;
+		int zero = 1;
+		for (int i = 0; i < 32; i++)
+			if (fi[i])
+				zero = 0;
+		// all zeroes: no Finder info (remove the attribute; a missing one is fine)
+#if HAS_PATH
+		if (zero)
+			rv = LINUX_SYSCALL((options & FSOPT_NOFOLLOW) ? __NR_lremovexattr : __NR_removexattr, vc.path, "user.com.apple.FinderInfo");
+		else
+			rv = LINUX_SYSCALL((options & FSOPT_NOFOLLOW) ? __NR_lsetxattr : __NR_setxattr, vc.path, "user.com.apple.FinderInfo", fi, 32, 0);
+#else
+		if (zero)
+			rv = LINUX_SYSCALL(__NR_fremovexattr, fd, "user.com.apple.FinderInfo");
+		else
+			rv = LINUX_SYSCALL(__NR_fsetxattr, fd, "user.com.apple.FinderInfo", fi, 32, 0);
+#endif
+		if (rv < 0 && !(zero && rv == -61 /* LINUX_ENODATA */) && rv != -95 /* LINUX_EOPNOTSUPP: fs without xattrs */)
+			return errno_linux_to_bsd(rv);
+		next += 32;
+	}
+	if (alist->commonattr & ATTR_CMN_OWNERID)
+		next += 4;
+	if (alist->commonattr & ATTR_CMN_GRPID)
+		next += 4;
     if (alist->commonattr & ATTR_CMN_ACCESSMASK)
 	{
 		int perms = *((int*) next);
@@ -138,6 +179,7 @@ struct xnu_attrlist* alist, void *attributeBuffer, __SIZE_TYPE__ bufferSize, uns
 			return errno_linux_to_bsd(rv);
 		next += 4;
 	}
+	// ATTR_CMN_FLAGS, ATTR_CMN_DATA_PROTECT_FLAGS: ignored
 
 	return 0;
 }

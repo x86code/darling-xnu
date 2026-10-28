@@ -8,9 +8,12 @@
 #include <darling/emulation/common/simple.h>
 #include <darling/emulation/conversion/fcntl/fcntl.h>
 #include <darling/emulation/conversion/errno.h>
+#include <darling/emulation/conversion/duct_errno.h>
 #include <darling/emulation/linux_premigration/linux-syscalls/linux.h>
 #include <darling/emulation/xnu_syscall/bsd/helper/bsdthread/cancelable.h>
 #include <darling/emulation/xnu_syscall/bsd/helper/misc/fdpath.h>
+#include <darling/emulation/linux_premigration/ext/for-libkqueue.h>
+#include <darling/emulation/xnu_syscall/bsd/helper/network/socktables.h>
 
 #ifndef O_NOFOLLOW
 #   define O_NOFOLLOW 0x0100
@@ -27,8 +30,6 @@ int oflags_linux_to_bsd(int flags);
 
 extern int sprintf(char *str, const char *format, ...);
 long sys_readlink(const char* path, char* buf, unsigned long bsize);
-
-extern void kqueue_dup(int oldfd, int newfd);
 
 static short int flock_type_linux_to_bsd(short int linux) {
 	switch (linux) {
@@ -61,9 +62,71 @@ static int cmd_bsd_to_linux(int bsd) {
 		case F_SETLKW: return LINUX_F_SETLKW;
 		case F_GETLK:  return LINUX_F_GETLK;
 		case F_DUPFD_CLOEXEC: return LINUX_F_DUPFD_CLOEXEC;
+		// x86Code: open file description locks. Apple's SQLite probes F_OFD_GETLK to pick its
+		// locking style; EINVAL made it fall back to dot-file locking (a <db>.lock directory),
+		// which goes stale when a process dies and then reports "database is locked" forever.
+		case 90: return 37; // F_OFD_SETLK  -> LINUX_F_OFD_SETLK
+		case 91: return 38; // F_OFD_SETLKW -> LINUX_F_OFD_SETLKW
+		case 92: return 36; // F_OFD_GETLK  -> LINUX_F_OFD_GETLK
 		default:       return -1;
 	};
 };
+
+// x86Code: F_SETLKWTIMEOUT (10) / F_OFD_SETLKWTIMEOUT (93): F_SETLKW / F_OFD_SETLKW that give up
+// with ETIMEDOUT after a timeout (XNU lf_setlock). Linux has no timed locks: retry the
+// non-blocking F_SETLK / F_OFD_SETLK until the lock is granted or the timeout passes.
+// Apple's SQLite uses these whenever a busy timeout is set (unixFileLock, for the database
+// and -shm locks); the EINVAL we returned became SQLITE_BUSY ("database is locked") at once,
+// without any lock contention (SpringBoard: applicationState.db, ATX stores -> _exit(3)).
+struct bsd_flocktimeout {
+	struct bsd_flock fl;
+	struct { long tv_sec; long tv_nsec; } timeout;
+};
+
+static long fcntl_lock_timeout(int fd, int cmd, struct bsd_flocktimeout* ft)
+{
+	struct linux_flock lf;
+	struct { long tv_sec; long tv_nsec; } now, end, nap;
+	int linux_cmd = (cmd == 93) ? 37 /* LINUX_F_OFD_SETLK */ : LINUX_F_SETLK;
+	long ret, wait_ns = 1000000;
+
+	lf.l_type = flock_type_bsd_to_linux(ft->fl.l_type);
+	lf.l_whence = ft->fl.l_whence;
+	lf.l_start = ft->fl.l_start;
+	lf.l_len = ft->fl.l_len;
+	lf.l_pid = 0;
+
+	LINUX_SYSCALL(__NR_clock_gettime, 1 /* CLOCK_MONOTONIC */, &end);
+	end.tv_sec += ft->timeout.tv_sec;
+	end.tv_nsec += ft->timeout.tv_nsec;
+	while (end.tv_nsec >= 1000000000) { end.tv_sec++; end.tv_nsec -= 1000000000; }
+
+	for (;;)
+	{
+#ifdef __NR_fcntl64
+		ret = LINUX_SYSCALL(__NR_fcntl64, fd, linux_cmd, &lf);
+#else
+		ret = LINUX_SYSCALL(__NR_fcntl, fd, linux_cmd, &lf);
+#endif
+		if (ret >= 0)
+			return ret;
+		if (ret != -LINUX_EAGAIN && ret != -LINUX_EACCES)
+			return errno_linux_to_bsd(ret);
+
+		LINUX_SYSCALL(__NR_clock_gettime, 1, &now);
+		long left = (end.tv_sec - now.tv_sec) * 1000000000L + (end.tv_nsec - now.tv_nsec);
+		if (left <= 0)
+			return -ETIMEDOUT;
+
+		if (wait_ns > left)
+			wait_ns = left;
+		nap.tv_sec = wait_ns / 1000000000L;
+		nap.tv_nsec = wait_ns % 1000000000L;
+		LINUX_SYSCALL(__NR_nanosleep, &nap, 0);
+		if (wait_ns < 10000000)
+			wait_ns *= 2;
+	}
+}
 
 long sys_fcntl(int fd, int cmd, long arg)
 {
@@ -80,6 +143,20 @@ long sys_fcntl_nocancel(int fd, int cmd, long arg)
 	{
 		case F_CHECK_LV:
 			return 0;
+		case 10: // x86Code: F_SETLKWTIMEOUT
+		case 93: // x86Code: F_OFD_SETLKWTIMEOUT
+			return fcntl_lock_timeout(fd, cmd, (struct bsd_flocktimeout*) arg);
+		// No code signing enforcement: accept signature registration (dyld_sim needs F_ADDFILESIGS_FOR_DYLD_SIM)
+		case F_ADDFILESIGS:
+		case F_ADDFILESIGS_RETURN:
+		case F_ADDFILESIGS_FOR_DYLD_SIM:
+		{
+			// Like XNU, report the end of the signed range in fs_file_start;
+			// claim everything up to the signature blob itself is covered
+			fsignatures_t* sigs = (fsignatures_t*) arg;
+			sigs->fs_file_start += (off_t)(uintptr_t) sigs->fs_blob_start;
+			return 0;
+		}
 		case F_SETFD:
 			if (arg & ~FD_CLOEXEC)
 				return -EINVAL;
@@ -87,6 +164,12 @@ long sys_fcntl_nocancel(int fd, int cmd, long arg)
 		case F_SETFL:
 			arg = oflags_bsd_to_linux(arg);
 			break;
+		// x86Code: data protection classes. Linux file systems have no data protection,
+		// which is class D (PROTECTION_CLASS_D, "no protection"): report it, accept sets.
+		case 63: // F_GETPROTECTIONCLASS
+			return 4;
+		case 64: // F_SETPROTECTIONCLASS
+			return 0;
 		case F_GETPATH:
 		{
 			ret = fdpath(fd, arg, MAXPATHLEN);
@@ -97,14 +180,16 @@ long sys_fcntl_nocancel(int fd, int cmd, long arg)
 		}
 		case F_SETLK:
 		case F_SETLKW:
-		case F_GETLK: {
+		case F_GETLK:
+		case 90: case 91: case 92: { // x86Code: F_OFD_SETLK/SETLKW/GETLK
 			struct bsd_flock* bsd_struct = arg;
 			struct linux_flock* linux_struct = __builtin_alloca(sizeof(struct linux_flock));
 			linux_struct->l_type = flock_type_bsd_to_linux(bsd_struct->l_type);
 			linux_struct->l_whence = bsd_struct->l_whence;
 			linux_struct->l_start = bsd_struct->l_start;
 			linux_struct->l_len = bsd_struct->l_len;
-			linux_struct->l_pid = bsd_struct->l_pid;
+			// x86Code: Linux rejects OFD lock requests with a nonzero l_pid
+			linux_struct->l_pid = (cmd >= 90) ? 0 : bsd_struct->l_pid;
 			arg = linux_struct;
 		} break;
 		case F_FULLFSYNC: {
@@ -137,7 +222,8 @@ long sys_fcntl_nocancel(int fd, int cmd, long arg)
 			break;
 		case F_SETLK:
 		case F_SETLKW:
-		case F_GETLK: {
+		case F_GETLK:
+		case 90: case 91: case 92: { // x86Code: F_OFD_SETLK/SETLKW/GETLK
 			struct bsd_flock* bsd_struct = original_arg;
 			struct linux_flock* linux_struct = arg;
 			bsd_struct->l_type = flock_type_linux_to_bsd(linux_struct->l_type);
@@ -149,6 +235,7 @@ long sys_fcntl_nocancel(int fd, int cmd, long arg)
 		case F_DUPFD:
 		case F_DUPFD_CLOEXEC:
 			kqueue_dup(fd, ret);
+			socket_tables_dup(fd, ret);
 			break;
 	}
 

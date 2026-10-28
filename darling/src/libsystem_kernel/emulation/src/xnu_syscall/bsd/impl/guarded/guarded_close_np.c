@@ -7,6 +7,6 @@
 
 long sys_guarded_close_np(int fd, uint64_t* guardid)
 {
-	*guardid = 0;
+	// x86Code: the guard is the caller's input (const guardid_t* in XNU); it was overwritten with 0
 	return sys_close(fd);
 }

@@ -9,6 +9,7 @@
 #include <darling/emulation/xnu_syscall/bsd/helper/misc/fdpath.h>
 #include <darling/emulation/common/simple.h>
 #include <darling/emulation/conversion/common_at.h>
+#include "xattr_names.h"
 
 #ifdef __NR_fstat64
 	#define STAT_CALL __NR_fstat64
@@ -24,6 +25,7 @@ long sys_flistxattr(int fd, char* namebuf, unsigned long size, int options)
 	int ret;
 
 	struct linux_stat st;
+	char lbuf[16384];
 	ret = LINUX_SYSCALL(STAT_CALL, fd, &st);
 	if (ret < 0)
 		return errno_linux_to_bsd(ret);
@@ -42,11 +44,16 @@ long sys_flistxattr(int fd, char* namebuf, unsigned long size, int options)
 		if (ret < 0)
 			return errno_linux_to_bsd(ret);
 		path[ret] = '\0';
-		ret = LINUX_SYSCALL(__NR_llistxattr, path, namebuf, size);
+		ret = LINUX_SYSCALL(__NR_llistxattr, path, lbuf, sizeof(lbuf));
 	} else {
-		ret = LINUX_SYSCALL(__NR_flistxattr, fd, namebuf, size);
+		ret = LINUX_SYSCALL(__NR_flistxattr, fd, lbuf, sizeof(lbuf));
 	}
 
+	if (ret < 0)
+		return errno_linux_to_bsd(ret);
+
+	// x86Code: Linux names -> Darwin names (xattr_names.h)
+	ret = xattr_list_to_bsd(lbuf, ret, namebuf, namebuf ? size : 0);
 	if (ret < 0)
 		return errno_linux_to_bsd(ret);
 

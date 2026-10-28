@@ -1,4 +1,5 @@
 #include <darling/emulation/xnu_syscall/bsd/impl/stat/fstatfs.h>
+#include <darling/emulation/xnu_syscall/bsd/impl/stat/statfs.h>
 
 #include <stddef.h>
 #include <sys/fcntl.h>
@@ -31,12 +32,11 @@ long sys_fstatfs(int fd, struct bsd_statfs* buf)
 
 long sys_fstatfs64(int fd, struct bsd_statfs64* buf)
 {
-	int fd_m, ret;
-	struct simple_readline_buf rbuf;
+	int ret;
 	struct linux_statfs64 lbuf;
-	char line[512];
-	char path[1024];
-	int max_len = 0;
+	struct linux_stat lst;
+	char procpath[64];
+	char path[4096];
 
 #ifdef __NR_fstatfs64
 	ret = LINUX_SYSCALL3(__NR_fstatfs64, fd, sizeof(lbuf), &lbuf);
@@ -48,54 +48,33 @@ long sys_fstatfs64(int fd, struct bsd_statfs64* buf)
 		return errno_linux_to_bsd(ret);
 
 	statfs_linux_to_bsd64(&lbuf, buf);
-
-	ret = fdpath(fd, path, sizeof(path));
-
-	if (ret < 0)
-		return ret;
-
-	fd_m = sys_open("/proc/self/mounts", O_RDONLY, 0);
-	if (fd_m < 0)
-		return fd_m;
-	
-	__simple_readline_init(&rbuf);
-
-	buf->f_mntonname[0] = 0;
-	buf->f_fstypename[0] = 0;
-	buf->f_mntfromname[0] = 0;
 	buf->f_iosize = 512;
 
-	while (__simple_readline(fd_m, &rbuf, line, sizeof(line)))
+	// x86Code: f_fsid = { st_dev, 0 } as in statfs (matches getattrlist's ATTR_CMN_FSID).
+	if (LINUX_SYSCALL(__NR_fstat, fd, &lst) == 0)
+		buf->f_fsid = (unsigned int) lst.st_dev;
+
+	// x86Code: match the mount table against the Linux path of the fd (fdpath() returns the
+	// prefix view, which never matched mounts outside the prefix), then report the mount
+	// point in the prefix view (statfs_fill_mount_info).
+	sprintf(procpath, "/proc/self/fd/%d", fd);
+#ifdef __NR_readlink
+	ret = LINUX_SYSCALL(__NR_readlink, procpath, path, sizeof(path) - 1);
+#else
+	ret = LINUX_SYSCALL(__NR_readlinkat, LINUX_AT_FDCWD, procpath, path, sizeof(path) - 1);
+#endif
+	if (ret < 0)
+		path[0] = 0;
+	else
+		path[ret] = 0;
+
+	if (path[0] == '/')
+		statfs_fill_mount_info(path, buf);
+	else
 	{
-		char* p;
-		char* saveptr;
-		char* mntfrom;
-		int len;
-
-		p = strtok_r(line, " ", &saveptr);
-		if (p == NULL)
-			continue;
-
-		mntfrom = p;
-		p = strtok_r(NULL, " ", &saveptr);
-		if (p == NULL)
-			continue;
-		
-		len = strlen(p);
-		if (strncmp(p, path, len) != 0 || len < max_len)
-			continue;
-
-		max_len = len;
-		strlcpy(buf->f_mntonname, p, sizeof(buf->f_mntonname));
-
-		p = strtok_r(NULL, " ", &saveptr);
-		if (p == NULL)
-			continue;
-
-		strlcpy(buf->f_fstypename, p, sizeof(buf->f_fstypename));
-		strlcpy(buf->f_mntfromname, mntfrom, sizeof(buf->f_mntfromname));
+		buf->f_mntonname[0] = 0;
+		buf->f_fstypename[0] = 0;
+		buf->f_mntfromname[0] = 0;
 	}
-
-	close_internal(fd_m);
 	return 0;
 }

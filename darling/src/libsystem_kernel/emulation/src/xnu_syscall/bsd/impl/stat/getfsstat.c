@@ -1,4 +1,5 @@
 #include <darling/emulation/xnu_syscall/bsd/impl/stat/getfsstat.h>
+#include <darling/emulation/xnu_syscall/bsd/impl/stat/statfs.h>
 
 #include <stddef.h>
 #include <sys/fcntl.h>
@@ -53,11 +54,14 @@ long sys_getfsstat64(struct bsd_statfs64* buf, int bufsize, int flags)
 				continue;
 
 			strlcpy(buf[count].f_mntfromname, p, sizeof(buf[count].f_mntfromname));
+			statfs_short_mntfrom(buf[count].f_mntfromname, sizeof(buf[count].f_mntfromname)); // x86Code
 
 			p = strtok_r(NULL, " ", &saveptr);
 			if (p == NULL)
 				continue;
 
+			// x86Code: unescape ("\\040") for the Linux statfs below; reported in the prefix view after it.
+			statfs_unescape_mount_path(p);
 			strlcpy(buf[count].f_mntonname, p, sizeof(buf[count].f_mntonname));
 
 			p = strtok_r(NULL, " ", &saveptr);
@@ -65,6 +69,7 @@ long sys_getfsstat64(struct bsd_statfs64* buf, int bufsize, int flags)
 				continue;
 
 			strlcpy(buf[count].f_fstypename, p, sizeof(buf[count].f_fstypename));
+			statfs_mac_fstypename(buf[count].f_fstypename, sizeof(buf[count].f_fstypename)); // x86Code
 
 #ifdef __NR_statfs64
 			if (LINUX_SYSCALL2(__NR_statfs64, (char*)buf[count].f_mntonname, &lbuf) < 0)
@@ -74,6 +79,18 @@ long sys_getfsstat64(struct bsd_statfs64* buf, int bufsize, int flags)
 				continue;
 
 			statfs_linux_to_bsd64(&lbuf, &buf[count]);
+			{
+				// x86Code: f_fsid = { st_dev, 0 } as in statfs/fstatfs: CFURL finds a file's volume
+				// (NSURLVolumeURLKey) by matching its fsid against this table.
+				struct linux_stat lst;
+				if (LINUX_SYSCALL(__NR_stat, (char*)buf[count].f_mntonname, &lst) == 0)
+					buf[count].f_fsid = (unsigned int) lst.st_dev;
+			}
+			{
+				char lpath[1024];
+				strlcpy(lpath, buf[count].f_mntonname, sizeof(lpath));
+				statfs_mount_path_to_darling(lpath, buf[count].f_mntonname, sizeof(buf[count].f_mntonname));
+			}
 		}
 
 		count++;

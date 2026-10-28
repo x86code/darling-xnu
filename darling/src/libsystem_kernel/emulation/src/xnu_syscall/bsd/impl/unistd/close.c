@@ -1,4 +1,5 @@
 #include <darling/emulation/xnu_syscall/bsd/impl/unistd/close.h>
+#include <darling/emulation/other/mach/foreign_hook.h>
 
 #include <darling/emulation/common/base.h>
 #include <darling/emulation/conversion/errno.h>
@@ -7,14 +8,26 @@
 #include <darling/emulation/other/mach/lkm.h>
 #include <darling/emulation/common/simple.h>
 #include <darling/emulation/common/guarded/table.h>
+#include <darling/emulation/linux_premigration/ext/for-libkqueue.h>
+#include <darling/emulation/xnu_syscall/bsd/helper/network/socktables.h>
+#include <darling/emulation/xnu_syscall/bsd/helper/network/sockextra.h>
 
 __attribute__((weak))
 __attribute__((visibility("default")))
-int kqueue_close(int kq) { return 0; }
+int kqueue_close(int kq)
+{
+	FOREIGN_HOOK(int (*)(int), foreign, "__darling_sim_kqueue_close");
+	return foreign ? foreign(kq) : 0;
+}
 
 __attribute__((weak))
 __attribute__((visibility("default")))
-void kqueue_closed_fd(int fd) {}
+void kqueue_closed_fd(int fd)
+{
+	FOREIGN_HOOK(void (*)(int), foreign, "__darling_sim_kqueue_closed_fd");
+	if (foreign)
+		foreign(fd);
+}
 
 long sys_close(int fd)
 {
@@ -37,6 +50,9 @@ long sys_close_nocancel(int fd)
 		// this FD belongs to libkqueue and it will take care of closing it
 		return 0;
 	}
+
+	socket_tables_close(fd);
+	sockextra_closed(fd); // x86Code
 
 	ret = LINUX_SYSCALL1(__NR_close, fd);
 	if (ret < 0)
