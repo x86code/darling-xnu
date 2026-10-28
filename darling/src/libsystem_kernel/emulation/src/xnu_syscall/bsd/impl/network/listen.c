@@ -1,10 +1,16 @@
 #include <darling/emulation/xnu_syscall/bsd/impl/network/listen.h>
+#include <darling/emulation/other/mach/foreign_hook.h>
 
 #include <darling/emulation/common/base.h>
 #include <darling/emulation/conversion/errno.h>
 #include <darling/emulation/linux_premigration/linux-syscalls/linux.h>
 
-void __attribute__((weak)) __attribute__((visibility("default"))) __darling_kqueue_register_listen(int fd) { }
+void __attribute__((weak)) __attribute__((visibility("default"))) __darling_kqueue_register_listen(int fd)
+{
+	FOREIGN_HOOK(void (*)(int), foreign, "__darling_sim_kqueue_register_listen");
+	if (foreign)
+		foreign(fd);
+}
 
 long sys_listen(int fd, int backlog)
 {

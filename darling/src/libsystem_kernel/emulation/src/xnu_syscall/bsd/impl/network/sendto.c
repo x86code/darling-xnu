@@ -9,6 +9,8 @@
 #include <darling/emulation/linux_premigration/linux-syscalls/linux.h>
 #include <darling/emulation/xnu_syscall/bsd/helper/network/duct.h>
 #include <darling/emulation/xnu_syscall/bsd/helper/bsdthread/cancelable.h>
+#include <darling/emulation/xnu_syscall/bsd/helper/network/route.h>
+#include <darling/emulation/xnu_syscall/bsd/helper/network/socktables.h>
 
 extern void *memcpy(void *dest, const void *src, __SIZE_TYPE__ n);
 
@@ -25,6 +27,11 @@ long sys_sendto_nocancel(int fd, const void* buffer, unsigned long length,
 	int ret, linux_flags;
 
 	struct sockaddr_fixup* fixed = NULL;
+	long route_ret;
+
+	// x86Code: PF_ROUTE sockets (willi/darling-xnu#7) are answered in the writer's thread
+	if (ROUTE_SOCKET_ACTIVE() && route_socket_write(fd, buffer, length, sockaddr != NULL, &route_ret))
+		return route_ret;
 
 	if (socklen > 512)
 		return -EINVAL;
@@ -36,7 +43,8 @@ long sys_sendto_nocancel(int fd, const void* buffer, unsigned long length,
 			return ret;
 	}
 
-	linux_flags = msgflags_bsd_to_linux(flags);
+	// x86Code: willi/darling-xnu#8: Linux never raises SIGPIPE; XNU's is raised below unless SO_NOSIGPIPE/MSG_NOSIGNAL
+	linux_flags = msgflags_bsd_to_linux(flags) | LINUX_MSG_NOSIGNAL;
 
 #ifdef __NR_socketcall
 	ret = LINUX_SYSCALL(__NR_socketcall, LINUX_SYS_SENDTO,
@@ -46,8 +54,11 @@ long sys_sendto_nocancel(int fd, const void* buffer, unsigned long length,
 			linux_flags, fixed, socklen);
 #endif
 
-	if (ret < 0)
+	if (ret < 0) {
 		ret = errno_linux_to_bsd(ret);
+		// XNU's error, and its SIGPIPE: Linux raised none (socktables.h)
+		ret = socket_send_failed(fd, ret, flags & BSD_MSG_NOSIGNAL, 0);
+	}
 
 	return ret;
 }
