@@ -95,11 +95,18 @@
 #define ATTR_VOL_ENCODINGSUSED  0x00010000
 #define ATTR_VOL_CAPABILITIES   0x00020000
 #define ATTR_VOL_UUID           0x00040000
+// x86Code: the newer volume attributes (XNU 8792+). installd's -[MIFileManager copyVolumeInfo:forURL:error:] asks
+// for ATTR_VOL_MOUNTPOINT|ATTR_VOL_UUID|ATTR_VOL_FSTYPENAME; EINVAL failed every app install (x86sim install).
+#define ATTR_VOL_MOUNTEXTFLAGS  0x00080000
+#define ATTR_VOL_FSTYPENAME     0x00100000
+#define ATTR_VOL_FSSUBTYPE      0x00200000
+#define ATTR_VOL_OWNER          0x00400000
+#define ATTR_VOL_SPACEUSED      0x00800000
 #define ATTR_VOL_QUOTA_SIZE     0x10000000
 #define ATTR_VOL_RESERVED_SIZE  0x20000000
 #define ATTR_VOL_ATTRIBUTES     0x40000000
 #define ATTR_VOL_INFO           0x80000000
-#define ATTR_VOL_VALIDMASK      0xF007FFFF
+#define ATTR_VOL_VALIDMASK      0xF0FFFFFF // x86Code: with the attributes above
 
 // vol_capabilities_attr_t
 #define VOL_CAPABILITIES_FORMAT     0
@@ -664,6 +671,8 @@ struct xnu_attrlist* alist, void *attributeBuffer, __SIZE_TYPE__ bufferSize, uns
 	}
 	if (vol & ATTR_VOL_MOUNTFLAGS)
 		getattr_put_u32(&p, sfs.f_flags);
+	if (vol & ATTR_VOL_MOUNTEXTFLAGS) // x86Code: packed as XNU does, right after the mount flags
+		getattr_put_u32(&p, 0);
 	if (vol & ATTR_VOL_MOUNTEDDEVICE)
 		getattr_put_ref(&p, sfs.f_mntfromname);
 	if (vol & ATTR_VOL_ENCODINGSUSED)
@@ -690,6 +699,8 @@ struct xnu_attrlist* alist, void *attributeBuffer, __SIZE_TYPE__ bufferSize, uns
 		uint64_t uuid[2] = { sfs.f_fsid, 0 };
 		getattr_put(&p, uuid, sizeof(uuid));
 	}
+	if (vol & ATTR_VOL_SPACEUSED) // x86Code
+		getattr_put_u64(&p, (uint64_t) (sfs.f_blocks - sfs.f_bfree) * sfs.f_bsize);
 	if (vol & ATTR_VOL_QUOTA_SIZE)
 		getattr_put_u64(&p, 0);
 	if (vol & ATTR_VOL_RESERVED_SIZE)
@@ -704,6 +715,13 @@ struct xnu_attrlist* alist, void *attributeBuffer, __SIZE_TYPE__ bufferSize, uns
 		memcpy(&attrs[5], attrs, 5 * sizeof(uint32_t));
 		getattr_put(&p, attrs, sizeof(attrs));
 	}
+	// x86Code: the type name is the one statfs reports (apfs, see the statfs conversion); subtype 0, owner root
+	if (vol & ATTR_VOL_FSTYPENAME)
+		getattr_put_ref(&p, sfs.f_fstypename);
+	if (vol & ATTR_VOL_FSSUBTYPE)
+		getattr_put_u32(&p, 0);
+	if (vol & ATTR_VOL_OWNER)
+		getattr_put_u32(&p, 0);
 
 	if (dir & ATTR_DIR_LINKCOUNT)
 		getattr_put_u32(&p, st.st_nlink);
