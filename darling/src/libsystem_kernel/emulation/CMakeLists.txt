@@ -156,6 +156,7 @@ set(xnu_syscall_bsd_sources
 	src/xnu_syscall/bsd/impl/misc/csrctl.c
 	src/xnu_syscall/bsd/impl/misc/fileport_makefd.c
 	src/xnu_syscall/bsd/impl/misc/x86code_memfd.c # x86Code
+	src/xnu_syscall/bsd/impl/misc/x86code_inotify.c # x86Code
 	src/xnu_syscall/bsd/impl/misc/fileport_makeport.c
 	src/xnu_syscall/bsd/impl/misc/fsgetpath.c
 	src/xnu_syscall/bsd/impl/misc/getentropy.c

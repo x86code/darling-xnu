@@ -514,5 +514,6 @@ void* __bsd_syscall_table[600] = {
 	[517] = sys_fclonefileat,
 	[521] = sys_abort_with_payload,
 	[524] = sys_setattrlistat,
+	[598] = sys_x86code_inotify, // x86Code: Darling-private, see x86code_inotify.c
 	[599] = sys_x86code_memfd_for_region, // x86Code: Darling-private (spike3/metal)
 };
