@@ -195,7 +195,7 @@ static long _proc_pidinfo_regionpath(int32_t pid, uint64_t arg, void* buffer, in
 static long _proc_pidinfo_taskinfo(int32_t pid, void* buffer, int32_t bufsize);
 static long _proc_pidinfo_taskallinfo(int32_t pid, void* buffer, int32_t bufsize);
 static long _proc_pidinfo_listthreads(int32_t pid, void* buffer, int32_t bufsize);
-static uint32_t _proc_platform(int32_t pid);
+uint32_t _proc_platform(int32_t pid); // x86Code: also used by sysctl kern.osproductversion
 
 long _proc_pidinfo(int32_t pid, uint32_t flavor, uint64_t arg, void* buffer, int32_t bufsize)
 {
@@ -285,7 +285,7 @@ static char fakeuuid[16];
  * x86Code: the platform of a process (XNU's p_platform): LC_BUILD_VERSION of its main
  * executable (x86_64 slice), or the LC_VERSION_MIN_* equivalent. 0 if unknown.
  */
-static uint32_t _proc_platform(int32_t pid)
+uint32_t _proc_platform(int32_t pid)
 {
 	char path[1024];
 	uint64_t fullLength = 0;
@@ -857,7 +857,11 @@ static long _proc_pidinfo_pathinfo(int32_t pid, void* buffer, int32_t bufsize)
 		return rv;
 
 	strncpy(buffer, args.path, bufsize);
-	return strlen(args.path);
+	// x86Code: XNU's PROC_PIDPATHINFO returns 0 on success (proc_pidpathinfo() never sets retval; libproc's
+	// proc_pidpath() takes the strlen itself). CloudKit's CKPIDIsStillAlive() calls proc_pidinfo() directly and wants
+	// 0 and a non-empty path: with the length here cloudd took every client for dead ("processIsAttached" NO) and
+	// answered every container proxy request with (nil, nil), which trapped syncdefaultsd and amsaccountsd.
+	return 0;
 }
 
 static long _proc_pidinfo_taskinfo(int32_t pid, void* buffer, int32_t bufsize)

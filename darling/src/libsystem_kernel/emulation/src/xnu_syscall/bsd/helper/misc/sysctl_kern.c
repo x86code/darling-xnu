@@ -386,8 +386,19 @@ sysctl_handler(handle_usrstack64)
 	return 0;
 }
 
+// x86Code: in an iOS simulator process, kern.osproductversion is the *host's* macOS version (the simulator's own
+// version comes from its SystemVersion.plist). Simulator frameworks decide what the host offers from it: FileProvider
+// uses its host service (com.apple.FileProvider.sim2host: open by id, mkdirat, ...) only for a host of macOS 15 or
+// later, and failed every such call with ENOSYS for our "11.7.4" (Files could not open a document). iOS 26.5
+// simulators run on macOS 26; spike3/fpsim2host stands in for that host service. Other processes keep Darling's.
+#define X86CODE_SIM_HOST_OSPRODUCTVERSION "26.4"
+uint32_t _proc_platform(int32_t pid);
+extern long sys_getpid(void);
 static sysctl_handler(handle_osproductversion) {
-	copyout_string(EMULATED_OSPRODUCTVERSION, (char*)old, oldlen);
+	static int simulator = -1;
+	if (simulator < 0)
+		simulator = _proc_platform(sys_getpid()) == 7 /* PLATFORM_IOSSIMULATOR */;
+	copyout_string(simulator ? X86CODE_SIM_HOST_OSPRODUCTVERSION : EMULATED_OSPRODUCTVERSION, (char*)old, oldlen);
 	return 0;
 };
 
