@@ -42,6 +42,15 @@ static inline long xattr_list_to_bsd(const char* list, long len, char* out, unsi
 		for (long k = 0; user && k < plen; k++)
 			if (list[i + k] != XATTR_LINUX_PREFIX[k])
 				user = 0;
+		// x86Code: chflags' storage (helper/misc/bsdflags.h) is not a Darwin attribute
+		static const char hidden[] = "user.x86code.bsdflags";
+		if (user && n == (long) sizeof(hidden) - 1) {
+			int same = 1;
+			for (long k = 0; k < n; k++)
+				if (list[i + k] != hidden[k]) { same = 0; break; }
+			if (same)
+				user = 0;
+		}
 		if (user) {
 			long m = n - plen + 1;
 			if (size) {

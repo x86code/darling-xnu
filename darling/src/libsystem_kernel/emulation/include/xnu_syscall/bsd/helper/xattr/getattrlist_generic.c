@@ -9,6 +9,7 @@
 #include <darling/emulation/conversion/errno.h>
 #include <darling/emulation/conversion/fcntl/open.h>
 #include <darling/emulation/conversion/common_at.h>
+#include <darling/emulation/xnu_syscall/bsd/helper/misc/bsdflags.h> // x86Code
 #include <darling/emulation/conversion/stat/common.h>
 #include <darling/emulation/linux_premigration/vchroot_expand.h>
 #include <darling/emulation/xnu_syscall/bsd/helper/misc/fdpath.h>
@@ -291,9 +292,11 @@ struct xnu_attrlist* alist, void *attributeBuffer, __SIZE_TYPE__ bufferSize, uns
 	if (alist->bitmapcount != ATTR_BIT_MAP_COUNT)
 		return -EINVAL;
 
-	// Volume attributes need ATTR_VOL_INFO (XNU also wants the object to be the
-	// volume root; we describe the volume holding any object)
-	if (alist->volattr != 0 && (!(alist->volattr & ATTR_VOL_INFO) || (alist->volattr & ~ATTR_VOL_VALIDMASK)))
+	// Volume attributes: XNU's getattrlist does not require ATTR_VOL_INFO (only setattrlist does; the man page
+	// asks for it). x86Code: FileProvider's -[NSURL fp_volumeUUID] asks for ATTR_VOL_UUID alone, and every EINVAL
+	// left fileproviderd without volume UUIDs for its domains (Files could not open a document). XNU also uses
+	// the volume's root for a non-root object; we describe the volume holding any object.
+	if (alist->volattr & ~ATTR_VOL_VALIDMASK)
 		return -EINVAL;
 	vol = alist->volattr & ~ATTR_VOL_INFO;
 	if ((alist->dirattr & ~ATTR_DIR_VALIDMASK) || (alist->fileattr & ~ATTR_FILE_VALIDMASK))
@@ -336,6 +339,8 @@ struct xnu_attrlist* alist, void *attributeBuffer, __SIZE_TYPE__ bufferSize, uns
 
 	stat_linux_to_bsd64(&lst, &st);
 	isdir = S_ISDIR(st.st_mode);
+	if (objfd >= 0 && !S_ISLNK(st.st_mode)) // x86Code: chflags flags (helper/misc/bsdflags.h)
+		st.st_flags = x86code_bsdflags_get_fd(objfd);
 	if (isdir)
 		dir = alist->dirattr;
 	else
@@ -399,8 +404,11 @@ struct xnu_attrlist* alist, void *attributeBuffer, __SIZE_TYPE__ bufferSize, uns
 		// pack every requested attribute; the ones we lack as zero / empty
 		common = alist->commonattr;
 		vol = alist->volattr & ~ATTR_VOL_INFO;
-		dir = alist->dirattr;
-		file = alist->fileattr;
+		// x86Code: as XNU (vfs_attr_pack_internal), even here directory attributes are packed for directories
+		// only and file attributes for everything else: packing both shifted a file's attributes by the directory
+		// ones (FileProvider read a 491 KB file's ATTR_FILE_ALLOCSIZE as 491520 << 32, "2.11 PB" in Preview)
+		dir = isdir ? alist->dirattr : 0;
+		file = isdir ? 0 : alist->fileattr;
 		cmnext = (options & FSOPT_ATTR_CMN_EXTENDED) ? alist->forkattr : 0;
 	}
 
@@ -559,9 +567,27 @@ struct xnu_attrlist* alist, void *attributeBuffer, __SIZE_TYPE__ bufferSize, uns
 	if (common & ATTR_CMN_FLAGS)
 		getattr_put_u32(&p, st.st_flags);
 	if (common & ATTR_CMN_GEN_COUNT)
-		getattr_put_u32(&p, 0);
+	{
+		// x86Code: 0 means "not supported"; APFS counts content changes. Ours changes with the modification time
+		// (never 0) for files and directories, which is what readers compare (FileProvider's libfssync).
+		uint32_t gen = 0;
+		if (S_ISREG(st.st_mode) || S_ISDIR(st.st_mode))
+		{
+			gen = (uint32_t) (st.st_mtimespec.tv_sec * 1000003u) ^ (uint32_t) st.st_mtimespec.tv_nsec;
+			if (!gen)
+				gen = 1;
+		}
+		getattr_put_u32(&p, gen);
+	}
 	if (common & ATTR_CMN_DOCUMENT_ID)
-		getattr_put_u32(&p, 0);
+	{
+		// x86Code: APFS gives a document id to an item once it is UF_TRACKED (chflags, helper/misc/bsdflags.h), and
+		// FileProvider's libfssync waits for it (EAGAIN while it is 0). Ours: the inode number's low 32 bits.
+		uint32_t docid = 0;
+		if (st.st_flags & 0x40 /* UF_TRACKED */)
+			docid = (uint32_t) st.st_ino ? (uint32_t) st.st_ino : 1;
+		getattr_put_u32(&p, docid);
+	}
 	if (common & ATTR_CMN_USERACCESS)
 	{
 		uint32_t access = 0;

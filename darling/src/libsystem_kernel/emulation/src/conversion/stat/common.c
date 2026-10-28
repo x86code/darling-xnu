@@ -100,3 +100,9 @@ void statfs_linux_to_bsd64(const struct linux_statfs64* lstat, struct bsd_statfs
 	stat->f_fsid = lstat->f_fsid;
 	stat->f_flags = statfs_flags_linux_to_bsd(lstat->f_flags, lstat->f_type);
 }
+
+// x86Code: see common.h
+void stat_set_flags64(struct stat64* stat, unsigned int flags)
+{
+	stat->st_flags = flags;
+}
