@@ -48,8 +48,9 @@ void copyout_string(const char* str, char* out, unsigned long* out_len)
 	else
 		len = strlen(str);
 
+	// x86Code: like XNU, the length includes the terminating NUL
 	if (out_len != NULL)
-		*out_len = len;
+		*out_len = len + 1;
 }
 
 long sys_sysctl(int* name, unsigned int nlen, void* old,

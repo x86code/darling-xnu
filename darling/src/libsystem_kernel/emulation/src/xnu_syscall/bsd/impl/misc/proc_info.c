@@ -8,6 +8,7 @@
 #include <stdbool.h>
 #include <sys/proc.h>
 #include <stddef.h>
+#include <darling/emulation/conversion/dirent/getdirentries.h> // x86Code
 
 #include <darling/emulation/common/base.h>
 #include <darling/emulation/conversion/dirent/getdirentries.h>
@@ -43,6 +44,87 @@ extern char *strcpy(char *dest, const char *src);
 extern char *strncpy(char *dest, const char *src, __SIZE_TYPE__ n);
 extern int strncmp (const char * str1, const char * str2, __SIZE_TYPE__ num);
 extern char *strchr(char *str, int character);
+
+// x86Code: proc_listpids/proc_listallpids (proc_info callnum 1): pids from /proc of the container's pid namespace.
+// type = PROC_ALL_PIDS/PGRP_ONLY/PPID_ONLY/UID_ONLY/RUID_ONLY/TTY_ONLY, typeinfo = the pgrp/ppid/uid.
+// Like XNU, returns the number of bytes written, or (buffer NULL) a size estimate.
+static long _proc_listpids(uint32_t type, uint32_t typeinfo, void* buffer, int32_t bufsize)
+{
+	int fd, ret;
+	char dents[1024];
+	long basep = 0;
+	int count = 0, max = (buffer && bufsize > 0) ? bufsize / (int)sizeof(int) : 0;
+	int* out = (int*) buffer;
+	static int uid = -1;
+
+	if (type < PROC_ALL_PIDS || type > PROC_KDBG_ONLY)
+		return -EINVAL;
+	if (uid == -1)
+		uid = sys_getuid();
+
+	fd = sys_open_nocancel("/proc", BSD_O_RDONLY | BSD_O_DIRECTORY, 0);
+	if (fd < 0)
+		return fd;
+
+	while ((ret = sys_getdirentries(fd, dents, sizeof(dents), &basep)) > 0)
+	{
+		int pos = 0;
+		while (pos < ret)
+		{
+			struct bsd_dirent* dent = (struct bsd_dirent*) &dents[pos];
+			pos += dent->d_reclen;
+
+			if (dent->d_name[0] < '1' || dent->d_name[0] > '9')
+				continue;
+
+			int p = __simple_atoi(dent->d_name, NULL);
+			bool match = true;
+
+			if (type == PROC_PGRP_ONLY || type == PROC_PPID_ONLY || type == PROC_TTY_ONLY)
+			{
+				char path[64], stat[1024];
+				char* statptr = stat;
+				const char* elem;
+				__simple_sprintf(path, "/proc/%d/stat", p);
+				if (!read_string(path, stat, sizeof(stat)))
+					continue;
+				skip_stat_elems(&statptr, 3); // pid, comm, state
+				elem = next_stat_elem(&statptr); // ppid
+				if (elem && type == PROC_PPID_ONLY)
+					match = __simple_atoi(elem, NULL) == (int)typeinfo;
+				elem = next_stat_elem(&statptr); // pgrp
+				if (elem && type == PROC_PGRP_ONLY)
+					match = __simple_atoi(elem, NULL) == (int)typeinfo;
+				if (type == PROC_TTY_ONLY)
+				{
+					next_stat_elem(&statptr); // session
+					elem = next_stat_elem(&statptr); // tty_nr
+					match = elem && __simple_atoi(elem, NULL) == (int)typeinfo;
+				}
+			}
+			else if (type == PROC_UID_ONLY || type == PROC_RUID_ONLY)
+				match = (int)typeinfo == uid; // everything in the container runs as one user
+			else if (type == PROC_KDBG_ONLY)
+				match = false;
+
+			if (!match)
+				continue;
+			if (out)
+			{
+				if (count >= max)
+					goto done;
+				out[count] = p;
+			}
+			count++;
+		}
+	}
+done:
+	close_internal(fd);
+
+	if (!out)
+		return (count + 20) * sizeof(int);
+	return count * sizeof(int);
+}
 
 long sys_proc_info(uint32_t callnum, int32_t pid, uint32_t flavor,
 		uint64_t arg, void* buffer, int32_t bufsize)
@@ -82,8 +164,9 @@ long sys_proc_info(uint32_t callnum, int32_t pid, uint32_t flavor,
 			return 0;
 		case 2: // proc_pidinfo
 			return _proc_pidinfo(pid, flavor, arg, buffer, bufsize);
+		case 1: // proc_listpids (x86Code)
+			return _proc_listpids((uint32_t)pid, flavor, buffer, bufsize);
 		case 3: // proc_pidfdinfo
-		case 1: // proc_listpids
 		default:
 			__simple_printf("sys_proc_info(): Unsupported callnum: %d\n",
 					callnum);
@@ -112,6 +195,7 @@ static long _proc_pidinfo_regionpath(int32_t pid, uint64_t arg, void* buffer, in
 static long _proc_pidinfo_taskinfo(int32_t pid, void* buffer, int32_t bufsize);
 static long _proc_pidinfo_taskallinfo(int32_t pid, void* buffer, int32_t bufsize);
 static long _proc_pidinfo_listthreads(int32_t pid, void* buffer, int32_t bufsize);
+static uint32_t _proc_platform(int32_t pid);
 
 long _proc_pidinfo(int32_t pid, uint32_t flavor, uint64_t arg, void* buffer, int32_t bufsize)
 {
@@ -137,6 +221,20 @@ long _proc_pidinfo(int32_t pid, uint32_t flavor, uint64_t arg, void* buffer, int
 		{
 			return _proc_pidinfo_tbsdinfo(pid, buffer, bufsize);
 		}
+		case PROC_PIDT_BSDINFOWITHUNIQID: // x86Code
+		{
+			struct proc_bsdinfowithuniqid* info = buffer;
+			long ret;
+			if (bufsize < sizeof(*info))
+				return -ENOSPC;
+			ret = _proc_pidinfo_tbsdinfo(pid, &info->pbsd, sizeof(info->pbsd));
+			if (ret < 0)
+				return ret;
+			ret = _proc_pidonfo_uniqinfo(pid, &info->p_uniqidentifier, sizeof(info->p_uniqidentifier));
+			if (ret < 0)
+				return ret;
+			return sizeof(*info);
+		}
 		case PROC_PIDTHREADINFO:
 		{
 			return _proc_pidinfo_pidthreadinfo(pid, arg, buffer, bufsize);
@@ -161,6 +259,17 @@ long _proc_pidinfo(int32_t pid, uint32_t flavor, uint64_t arg, void* buffer, int
 		{
 			return _proc_pidinfo_listthreads(pid, buffer, bufsize);
 		}
+		case 30: // PROC_PIDPLATFORMINFO (x86Code)
+		{
+			uint32_t platform;
+			if (bufsize < sizeof(uint32_t))
+				return -ENOMEM;
+			platform = _proc_platform(pid);
+			if (platform == 0)
+				return -ESRCH;
+			*(uint32_t*) buffer = platform;
+			return sizeof(uint32_t);
+		}
 		default:
 		{
 			__simple_printf("sys_proc_info(): Unsupported pidinfo flavor: %d\n",
@@ -171,6 +280,71 @@ long _proc_pidinfo(int32_t pid, uint32_t flavor, uint64_t arg, void* buffer, int
 }
 
 static char fakeuuid[16];
+
+/*
+ * x86Code: the platform of a process (XNU's p_platform): LC_BUILD_VERSION of its main
+ * executable (x86_64 slice), or the LC_VERSION_MIN_* equivalent. 0 if unknown.
+ */
+static uint32_t _proc_platform(int32_t pid)
+{
+	char path[1024];
+	uint64_t fullLength = 0;
+	uint32_t hdr[8], platform = 0;
+	long long slice = 0;
+	int fd;
+
+	if (dserver_rpc_get_executable_path(pid, path, sizeof(path), &fullLength) != 0)
+		return 0;
+	fd = LINUX_SYSCALL(__NR_open, path, LINUX_O_RDONLY | LINUX_O_CLOEXEC, 0);
+	if (fd < 0)
+		return 0;
+
+	if (LINUX_SYSCALL(__NR_pread64, fd, hdr, 8, 0) != 8)
+		goto out;
+	if (__builtin_bswap32(hdr[0]) == 0xcafebabe)
+	{
+		uint32_t n = __builtin_bswap32(hdr[1]), i;
+		for (i = 0; i < n && i < 16; i++)
+		{
+			uint32_t arch[5];
+			if (LINUX_SYSCALL(__NR_pread64, fd, arch, sizeof(arch), 8 + i * sizeof(arch)) != sizeof(arch))
+				goto out;
+			if (__builtin_bswap32(arch[0]) == 0x01000007) // CPU_TYPE_X86_64
+			{
+				slice = __builtin_bswap32(arch[2]);
+				break;
+			}
+		}
+	}
+	if (LINUX_SYSCALL(__NR_pread64, fd, hdr, 32, slice) != 32 || hdr[0] != 0xfeedfacf)
+		goto out;
+
+	{
+		long long off = slice + 32;
+		uint32_t i;
+		for (i = 0; i < hdr[4]; i++)
+		{
+			uint32_t lc[3]; // cmd, cmdsize, platform (LC_BUILD_VERSION)
+			if (LINUX_SYSCALL(__NR_pread64, fd, lc, sizeof(lc), off) != sizeof(lc) || lc[1] < 8)
+				break;
+			if (lc[0] == 0x32) { platform = lc[2]; break; }       // LC_BUILD_VERSION
+			if (lc[0] == 0x24) { platform = 1; break; }           // LC_VERSION_MIN_MACOSX
+			if (lc[0] == 0x25) { platform = 2; break; }           // LC_VERSION_MIN_IPHONEOS
+			off += lc[1];
+		}
+	}
+out:
+	LINUX_SYSCALL(__NR_close, fd);
+	return platform;
+}
+
+// x86Code: proc_info_extended_id (545): proc_info for a pid, optionally checked against
+// a unique id; the id is not checked here.
+long sys_proc_info_extended_id(int32_t callnum, int32_t pid, uint32_t flavor, uint32_t flags,
+		uint64_t ext_id, uint64_t arg, void* buffer, int32_t buffersize)
+{
+	return sys_proc_info(callnum, pid, flavor, arg, buffer, buffersize);
+}
 
 static long _proc_pidonfo_uniqinfo(int32_t pid, void* buffer, int32_t bufsize)
 {
@@ -238,7 +412,7 @@ static long _proc_pidonfo_uniqinfo(int32_t pid, void* buffer, int32_t bufsize)
 	info->p_puniqueid |= (ppid & 0xffff);
 
 #endif
-	return 1;
+	return sizeof(struct proc_uniqidentifierinfo); // x86Code: XNU returns the structure size
 }
 
 // glibc bits/confname.h
@@ -328,6 +502,17 @@ static long _proc_pidinfo_tbsdinfo(int32_t pid, void* buffer, int32_t bufsize)
 	info->pbi_start_tvusec = starttime_usecs;
 
 	memcpy(info->pbi_comm, shortinfo.pbsi_comm, sizeof(info->pbi_comm));
+	// x86Code: pbi_name is the long name (2 * MAXCOMLEN), which proc_name() prefers
+	{
+		char cpath[64], comm[32];
+		__simple_sprintf(cpath, "/proc/%d/comm", pid);
+		if (read_string(cpath, comm, sizeof(comm))) {
+			int n = strlen(comm);
+			if (n > 0 && comm[n - 1] == '\n')
+				comm[n - 1] = 0;
+			darling_proc_name(pid, comm, info->pbi_name, sizeof(info->pbi_name));
+		}
+	}
 
 	return sizeof(struct proc_bsdinfo);
 reterr:
@@ -360,7 +545,7 @@ static long _proc_pidinfo_pidthreadinfo(int32_t pid, uint64_t thread_handle, voi
 	}
 
 	// TODO: Other proc_threadinfo fields
-	return 1;
+	return sizeof(struct proc_threadinfo); // x86Code: XNU returns the structure size
 }
 
 static long _proc_pidinfo_shortbsdinfo(int32_t pid, void* buffer, int32_t bufsize)
@@ -391,6 +576,7 @@ static long _proc_pidinfo_shortbsdinfo(int32_t pid, void* buffer, int32_t bufsiz
 	// comm
 	READELEM();
 	strncpy(info->pbsi_comm, elem, sizeof(info->pbsi_comm));
+	darling_proc_name(pid, elem, info->pbsi_comm, sizeof(info->pbsi_comm)); // x86Code
 
 	// process state
 	READELEM();
@@ -437,7 +623,7 @@ static long _proc_pidinfo_shortbsdinfo(int32_t pid, void* buffer, int32_t bufsiz
 	if (is_64_bit)
 		info->pbsi_flags |= P_LP64;
 
-	return 1;
+	return sizeof(struct proc_bsdshortinfo); // x86Code: XNU returns the structure size
 reterr:
 	return -EINVAL;
 }
@@ -509,7 +695,7 @@ static long _proc_pidinfo_regionpathinfo(int32_t pid, uint64_t arg, void* buffer
 	}
 
 	memcpy(buffer, &my_rpi, sizeof(my_rpi));
-	return foundRegion ? 1 : -ESRCH;
+	return foundRegion ? sizeof(struct proc_regionwithpathinfo) : -ESRCH; // x86Code: XNU returns the structure size
 }
 
 static long _proc_pidinfo_regionpath(int32_t pid, uint64_t arg, void* buffer, int32_t buffer_size) {

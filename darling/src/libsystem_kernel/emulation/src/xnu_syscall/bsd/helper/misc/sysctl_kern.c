@@ -23,6 +23,8 @@
 enum {
 	_KERN_MSGBUF = 1000,
 	_KERN_OSPRODUCTVERSION,
+	_KERN_BOOTARGS,
+	_KERN_BOOTSESSIONUUID, // x86Code
 
 	_KERN_SEMMNS = 1000,
 };
@@ -46,6 +48,8 @@ static sysctl_handler(handle_usrstack64);
 static sysctl_handler(handle_sysv_semmns);
 static sysctl_handler(handle_osproductversion);
 static sysctl_handler(handle_osrevision);
+static sysctl_handler(handle_bootargs);
+static sysctl_handler(handle_bootsessionuuid);
 
 extern int _sysctl_proc(int what, int flag, struct kinfo_proc* out, unsigned long* buflen);
 extern int _sysctl_procargs(int pid, char* buf, unsigned long* buflen);
@@ -75,6 +79,8 @@ const struct known_sysctl sysctls_kern[] = {
 	{ .oid = KERN_USRSTACK32, .type = CTLTYPE_INT, .exttype = "I", .name = "usrstack", .handler = handle_usrstack32 },
 	{ .oid = KERN_USRSTACK64, .type = CTLTYPE_QUAD, .exttype = "Q", .name = "usrstack64", .handler = handle_usrstack64 },
 	{ .oid = _KERN_OSPRODUCTVERSION, .type = CTLTYPE_STRING, .exttype = "S", .name = "osproductversion", .handler = handle_osproductversion },
+	{ .oid = _KERN_BOOTARGS, .type = CTLTYPE_STRING, .exttype = "S", .name = "bootargs", .handler = handle_bootargs },
+	{ .oid = _KERN_BOOTSESSIONUUID, .type = CTLTYPE_STRING, .exttype = "S", .name = "bootsessionuuid", .handler = handle_bootsessionuuid },
 	{ .oid = KERN_OSREV, .type = CTLTYPE_INT, .exttype = "I", .name = "osrevision", .handler = handle_osrevision },
 	{ .oid = KERN_SYSV, .type = CTLTYPE_NODE, .exttype = "", .name = "sysv", .subctls = sysctls_kern_sysv },
 	{ .oid = -1 }
@@ -136,26 +142,31 @@ sysctl_handler(handle_argmax)
 
 sysctl_handler(handle_boottime)
 {
-	// Fill in struct timeval { tv_sec, tv_usec }
-	struct sysinfo info;
+	// x86Code: the boot time to the microsecond, as realtime minus the monotonic clock mach_absolute_time() counts
+	// (Linux CLOCK_MONOTONIC), computed once per process so it doesn't jump around (libc's _mach_boottime_usec loops
+	// until two reads agree). It was the realtime minus sysinfo's whole-second uptime with the microseconds set to 0:
+	// libc's clock_gettime(CLOCK_MONOTONIC) (realtime minus boot time) then disagreed with mach_absolute_time() by the
+	// lost fraction, and its seconds stepped back and forth by 1 s within every second.
+	static long long boottime_usec = -1;
 	struct bsd_timeval* tv;
 
-	if (__linux_sysinfo(&info) == -1)
-		return -errno;
+	if (boottime_usec < 0)
+	{
+		struct { long tv_sec; long tv_nsec; } rt, mt;
+		if (LINUX_SYSCALL(__NR_clock_gettime, 0 /* CLOCK_REALTIME */, &rt) < 0
+				|| LINUX_SYSCALL(__NR_clock_gettime, 1 /* CLOCK_MONOTONIC */, &mt) < 0)
+			return -EINVAL;
+		long long ns = (rt.tv_sec - mt.tv_sec) * 1000000000LL + (rt.tv_nsec - mt.tv_nsec);
+		boottime_usec = ns / 1000;
+	}
 
 	tv = (struct bsd_timeval*) old;
 	if (tv != NULL)
 	{
 		if (*oldlen < sizeof(*tv))
 			return -EINVAL;
-		sys_gettimeofday(tv, NULL);
-
-		tv->tv_sec -= info.uptime;
-
-		// we don't want the microseconds to be constantly jumping around
-		// (that actually causes an infinite loop in `_mach_boottime_usec` in libc)
-		// but Linux doesn't give us microseconds, so just settle for 0
-		tv->tv_usec = 0;
+		tv->tv_sec = boottime_usec / 1000000;
+		tv->tv_usec = boottime_usec % 1000000;
 	}
 	*oldlen = sizeof(*tv);
 	
@@ -170,11 +181,60 @@ sysctl_handler(handle_ostype)
 	return 0;
 }
 
+// The iOS simulator runtime refuses to start on hosts older than macOS 14
+// (Darwin 23). Report a macOS 26 kernel to processes on a foreign libSystem.
+#define FOREIGN_LIBSYSTEM_RELEASE "25.0.0"
+
+#ifndef VARIANT_DYLD
+extern bool darling_foreign_libsystem(void);
+#endif
+
 sysctl_handler(handle_osrelease)
 {
 	const char* s = EMULATED_RELEASE;
 
+#ifndef VARIANT_DYLD
+	if (darling_foreign_libsystem())
+		s = FOREIGN_LIBSYSTEM_RELEASE;
+#endif
+
 	copyout_string(s, (char*) old, oldlen);
+	return 0;
+}
+
+// No boot arguments (launchd_sim requires the sysctl to exist)
+sysctl_handler(handle_bootargs)
+{
+	copyout_string("", (char*) old, oldlen);
+	return 0;
+}
+
+// x86Code: kern.bootsessionuuid from Linux's boot_id (upper case, as on Darwin). Missing, PosterBoard's
+// pbf_bootInstanceIdentifier was nil, its transient-info URL too, and it crashed (no wallpaper).
+sysctl_handler(handle_bootsessionuuid)
+{
+	static char uuid[40];
+	if (!uuid[0])
+	{
+		char buf[40] = {0};
+		int fd = sys_open("/proc/sys/kernel/random/boot_id", BSD_O_RDONLY, 0);
+		if (fd >= 0)
+		{
+			int n = sys_read(fd, buf, 36);
+			close_internal(fd);
+			if (n == 36)
+			{
+				for (int i = 0; i < 36; i++)
+					buf[i] = (buf[i] >= 'a' && buf[i] <= 'f') ? buf[i] - 'a' + 'A' : buf[i];
+				buf[36] = 0;
+				for (int i = 0; i <= 36; i++)
+					uuid[i] = buf[i];
+			}
+		}
+	}
+	if (!uuid[0])
+		return -ENOENT;
+	copyout_string(uuid, (char*) old, oldlen);
 	return 0;
 }
 

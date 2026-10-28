@@ -33,6 +33,9 @@ add_definitions(-DPRIVATE=1)
 
 add_subdirectory(libsyscall)
 
+# x86Code: newer interfaces expected by the iOS 26 simulator runtime (shared library only)
+add_darling_object_library(simcompat simcompat/simcompat.c)
+
 set(DYLIB_INSTALL_NAME "/usr/lib/system/libsystem_kernel.dylib")
 add_circular(system_kernel FAT
 	OBJECTS
@@ -42,6 +45,7 @@ add_circular(system_kernel FAT
 		$<TARGET_OBJECTS:libsyscall_dynamic>
 		#$<TARGET_OBJECTS:kqueue>
 		$<TARGET_OBJECTS:emulation>
+		$<TARGET_OBJECTS:simcompat>
 	SIBLINGS
 		system_c
 		compiler_rt
