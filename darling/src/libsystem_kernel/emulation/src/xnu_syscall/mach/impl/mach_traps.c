@@ -1,4 +1,5 @@
 #define ioctl __real_ioctl
+#include <darling/emulation/linux_premigration/linux-syscalls/linux.h>
 #include <mach/mach_traps.h>
 #include <mach/vm_statistics.h>
 #include <mach/kern_return.h>
@@ -102,6 +103,13 @@ kern_return_t semaphore_signal_trap_impl(
 				mach_port_name_t signal_name)
 {
 	int code = dserver_rpc_semaphore_signal(signal_name);
+
+	// x86Code: experiment — retry transient send failures to darlingserver
+	for (int i = 0; i < 50 && (code == -111 /* ECONNREFUSED */ || code == -11 /* EAGAIN */); i++) {
+		struct timespec ts = { 0, 2000000 };
+		LINUX_SYSCALL(__NR_nanosleep, &ts, NULL);
+		code = dserver_rpc_semaphore_signal(signal_name);
+	}
 
 	if (code < 0) {
 		__simple_printf("semaphore_signal failed (internally): %d\n", code);
@@ -276,6 +284,37 @@ kern_return_t _kernelrpc_mach_vm_deallocate_trap_impl(
 			return KERN_FAILURE;
 
 		return KERN_SUCCESS;
+	}
+}
+
+// x86Code: purgeable memory. Darling never purges anything (VM_FLAGS_PURGABLE allocations are
+// plain anonymous memory), so every object is and stays nonvolatile: SET_STATE succeeds and
+// reports the old state as VM_PURGABLE_NONVOLATILE ("not emptied"), GET_STATE reports it too.
+// The unimplemented trap failed with KERN_FAILURE; Apple's SQLite page cache (purgeableCache*,
+// vm_purgable_control on every chunk retain/unpin) then failed page fetches.
+kern_return_t _kernelrpc_mach_vm_purgable_control_trap_impl(
+				mach_port_name_t target,
+				mach_vm_offset_t address,
+				int control,
+				int* state
+)
+{
+	if (target != 0 && target != mach_task_self())
+		return MACH_SEND_INVALID_DEST;
+
+	switch (control)
+	{
+		case 0: // VM_PURGABLE_SET_STATE
+		case 1: // VM_PURGABLE_GET_STATE
+		case 2: // VM_PURGABLE_SET_STATE_FROM_KERNEL
+			if (state == NULL)
+				return KERN_INVALID_ARGUMENT;
+			*state = 0; // VM_PURGABLE_NONVOLATILE
+			return KERN_SUCCESS;
+		case 3: // VM_PURGABLE_PURGE_ALL
+			return KERN_SUCCESS;
+		default:
+			return KERN_INVALID_ARGUMENT;
 	}
 }
 
@@ -631,6 +670,52 @@ kern_return_t _kernelrpc_mach_port_type_impl(
 	return code;
 };
 
+// x86Code: for iokitd (see host_darling_set_io_master_port in darlingserver)
+VISIBLE
+kern_return_t __darling_set_io_master_port(mach_port_name_t port)
+{
+	int code = dserver_rpc_set_io_master_port(port);
+	return code < 0 ? KERN_FAILURE : code;
+}
+
+// x86Code: darlingserver has no bank attribute manager, so a voucher made only of
+// bank attributes cannot be created. Such a voucher carries no other state; return
+// the empty voucher (MACH_VOUCHER_NULL), as XNU does for empty recipes. libdispatch
+// asks for one for every process and copes with a null task voucher.
+static bool recipes_only_bank(const void* recipes, int recipes_size)
+{
+	const char* p = recipes;
+	const char* end = p + recipes_size;
+
+	if (recipes_size <= 0)
+		return false;
+	while (p < end)
+	{
+		const mach_voucher_attr_recipe_data_t* r = (const mach_voucher_attr_recipe_data_t*) p;
+		if ((const char*) (r + 1) > end || r->key != MACH_VOUCHER_ATTR_KEY_BANK)
+			return false;
+		p += sizeof(*r) + r->content_size;
+	}
+	return true;
+}
+
+kern_return_t host_create_mach_voucher_impl(mach_port_name_t host, void* recipes, int recipes_size, mach_port_name_t* voucher)
+{
+	int code = dserver_rpc_host_create_mach_voucher(host, recipes, recipes_size, voucher);
+
+	if (code < 0) {
+		__simple_printf("host_create_mach_voucher failed (internally): %d\n", code);
+		__simple_abort();
+	}
+
+	if (code != KERN_SUCCESS && recipes_only_bank(recipes, recipes_size)) {
+		*voucher = MACH_PORT_NULL;
+		return KERN_SUCCESS;
+	}
+
+	return code;
+}
+
 kern_return_t macx_swapon_impl(
 				uint64_t filename,
 				int flags,
@@ -760,10 +845,23 @@ kern_return_t pid_for_task_impl(
 	return code;
 }
 
-kern_return_t mach_generate_activity_id_impl(mach_port_name_t task, int i, uint64_t* id)
+// x86Code: hand out `count` consecutive activity ids (libdispatch reserves blocks of
+// them for tracing and crashes without). XNU uses one global counter; here the pid in
+// the high bits keeps ids from different processes apart. Ids stay below 2^56
+// (firehose activity id mask) and are never 0.
+extern long sys_getpid(void);
+
+kern_return_t mach_generate_activity_id_impl(mach_port_name_t task, int count, uint64_t* id)
 {
-	UNIMPLEMENTED_TRAP();
-	return KERN_FAILURE;
+	static uint64_t next = 0;
+	uint64_t first;
+
+	if (count <= 0 || count > 1024 || id == NULL)
+		return KERN_INVALID_ARGUMENT;
+
+	first = __atomic_fetch_add(&next, (uint64_t) count, __ATOMIC_RELAXED);
+	*id = (((uint64_t) sys_getpid() & 0xffffff) << 32) + first + 1;
+	return KERN_SUCCESS;
 }
 
 mach_port_name_t mk_timer_create_impl(void)
@@ -797,6 +895,18 @@ kern_return_t mk_timer_arm_impl(mach_port_name_t name, uint64_t expire_time)
 	}
 
 	return code;
+}
+
+// x86Code: mach trap 95 (mk_timer_arm_leeway) was unimplemented ("Unimplemented mach trap (95)"), so a timer armed with it
+// never fired. SpringBoard's status-bar clock is driven by one (SpringBoardFoundation's SBFMachNextMinuteDateProvider
+// arms an mk_timer for the next minute with mk_timer_arm_leeway): the time stayed at the boot minute. The deadline is in
+// mach_absolute_time() units, or mach_continuous_time() with MK_TIMER_CONTINUOUS; both are the same clock here (no
+// sleep), so it is armed as mk_timer_arm(). The leeway only lets XNU coalesce; MK_TIMER_CRITICAL only picks a queue.
+kern_return_t mk_timer_arm_leeway_impl(mach_port_name_t name, uint64_t mk_timer_flags, uint64_t expire_time, uint64_t mk_leeway)
+{
+	(void) mk_timer_flags;
+	(void) mk_leeway;
+	return mk_timer_arm_impl(name, expire_time);
 }
 
 kern_return_t mk_timer_cancel_impl(mach_port_name_t name, uint64_t *result_time)

@@ -83,7 +83,13 @@ long sys_mincore(void* addr, unsigned long len, unsigned char* vec)
 {
 	int ret;
 
-	ret = LINUX_SYSCALL3(__NR_mincore, addr, len, vec);
+	// x86Code: XNU's mincore truncates addr to a page boundary (and rounds the end up);
+	// Linux fails an unaligned addr with EINVAL. Apple's sqlite fts3_tokenizer() checks
+	// every tokenizer method pointer with mincore(ptr, 8) and traps (ud2) on failure.
+	unsigned long page = 4096;
+	unsigned long start = (unsigned long) addr & ~(page - 1);
+	len += (unsigned long) addr - start;
+	ret = LINUX_SYSCALL3(__NR_mincore, start, len, vec);
 	if (ret < 0)
 		ret = errno_linux_to_bsd(ret);
 
