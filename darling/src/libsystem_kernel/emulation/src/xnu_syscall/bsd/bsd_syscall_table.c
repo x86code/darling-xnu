@@ -47,6 +47,7 @@
 #include <darling/emulation/xnu_syscall/bsd/impl/misc/getrlimit.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/misc/getrusage.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/misc/iopolicysys.h>
+#include <darling/emulation/xnu_syscall/bsd/impl/misc/fsctl.h> // x86Code
 #include <darling/emulation/xnu_syscall/bsd/impl/misc/proc_info.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/misc/ptrace.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/misc/reboot.h>
@@ -373,8 +374,10 @@ void* __bsd_syscall_table[600] = {
 	[239] = sys_fremovexattr,
 	[240] = sys_listxattr,
 	[241] = sys_flistxattr,
+	[242] = sys_fsctl, // x86Code
 	[243] = sys_initgroups,
 	[244] = sys_posix_spawn,
+	[245] = sys_ffsctl, // x86Code
 	[254] = sys_semctl,
 	[255] = sys_semget,
 	[256] = sys_semop,
