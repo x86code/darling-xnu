@@ -125,6 +125,8 @@ void fsgetpath_remember(unsigned int dev, unsigned long long ino, const char* pa
 	fsgp_release();
 }
 
+static long fsgetpath_volume_root(const char* buf, unsigned long size, unsigned int dev);
+
 long sys_fsgetpath(const char* buf, unsigned long size, void* fsid, unsigned long long objid)
 {
 	if (!buf || !fsid)
@@ -160,8 +162,9 @@ long sys_fsgetpath(const char* buf, unsigned long size, void* fsid, unsigned lon
 					tmp[i] = e->path[i];
 				tmp[len] = 0;
 				struct stat64 st;
-				// still the same object (a writer may have changed the slot meanwhile, inodes get reused)
-				if (e->ino == objid && sys_lstat64(tmp, &st) == 0 && st.st_ino == objid && (unsigned int) st.st_dev == dev)
+				// still the same object (a writer may have changed the slot meanwhile, inodes get reused); a document id
+				// (getattrlist ATTR_CMN_DOCUMENT_ID) is the inode's low 32 bits
+				if (e->ino == objid && sys_lstat64(tmp, &st) == 0 && (st.st_ino == objid || (objid <= 0xffffffffull && (uint32_t) st.st_ino == objid)) && (unsigned int) st.st_dev == dev)
 				{
 					if (len + 1 > size)
 						rv = -ENOSPC;
@@ -175,5 +178,77 @@ long sys_fsgetpath(const char* buf, unsigned long size, void* fsid, unsigned lon
 			}
 		}
 	}
+	if (rv == -ENOENT && objid == 2)
+		rv = fsgetpath_volume_root(buf, size, dev);
 	return rv;
+}
+
+// x86Code: object id 2 is the root directory of an APFS/HFS volume (revisiond opens a volume by (fsid, 2) for its
+// document-id library; "Failed creating library for 58"). Linux roots have other inode numbers: the mount point
+// is found from any path of that device the table knows, walking up while the parent is on the same device.
+static long fsgetpath_volume_root(const char* buf, unsigned long size, unsigned int dev)
+{
+	struct fsgp_shared* t = fsgp_shared_table();
+	if (!t)
+		return -ENOENT;
+	char path[FSGP_SH_PATH];
+	int found = 0;
+	for (unsigned int i = 0; i < FSGP_SH_SLOTS && !found; i++)
+	{
+		struct fsgp_shared* e = &t[i];
+		unsigned int len = e->len;
+		if (!__atomic_load_n(&e->ino, __ATOMIC_ACQUIRE) || e->dev != dev || len == 0 || len >= FSGP_SH_PATH || e->path[0] != '/')
+			continue;
+		for (unsigned int k = 0; k < len; k++)
+			path[k] = e->path[k];
+		path[len] = 0;
+		struct stat64 st;
+		found = sys_lstat64(path, &st) == 0 && (unsigned int) st.st_dev == dev;
+	}
+	if (!found)
+		return -ENOENT;
+	for (;;)
+	{
+		__SIZE_TYPE__ len = __simple_strlen(path);
+		while (len > 1 && path[len - 1] != '/')
+			len--;
+		if (len <= 1)
+		{
+			struct stat64 st;
+			if (sys_lstat64("/", &st) == 0 && (unsigned int) st.st_dev == dev)
+				path[0] = '/', path[1] = 0;
+			break;
+		}
+		char parent[FSGP_SH_PATH];
+		for (__SIZE_TYPE__ k = 0; k < len - 1; k++)
+			parent[k] = path[k];
+		parent[len - 1] = 0;
+		struct stat64 st;
+		if (sys_lstat64(parent, &st) != 0 || (unsigned int) st.st_dev != dev)
+			break;
+		for (__SIZE_TYPE__ k = 0; k < len; k++)
+			path[k] = parent[k];
+	}
+	__SIZE_TYPE__ len = __simple_strlen(path);
+	if (len + 1 > size)
+		return -ENOSPC;
+	for (__SIZE_TYPE__ k = 0; k <= len; k++)
+		((char*) buf)[k] = path[k];
+	return len + 1;
+}
+
+// x86Code: openbyid_np (BSD 479) was missing (ENOSYS). APFS opens a file by its object id or by its document id;
+// GenerationalStorage resolves a document id that way (GSLibraryResolveDocumentId2: openbyid_np, then checks the
+// document id of what it opened), and FileProviderResolver with it every "did=" item identifier: Preview could
+// not open a file handed over by Files ("Error resolving bookmark ... did=... -1005"). Resolved like fsgetpath,
+// then opened by path.
+long sys_openbyid_np(void* fsid, void* objid, int oflags)
+{
+	char path[FSGP_PATH];
+	if (!fsid || !objid)
+		return -EFAULT;
+	long rv = sys_fsgetpath(path, sizeof(path), fsid, *(unsigned long long*) objid);
+	if (rv < 0)
+		return rv;
+	return sys_open(path, oflags, 0);
 }

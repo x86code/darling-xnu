@@ -443,6 +443,7 @@ void* __bsd_syscall_table[600] = {
 	[374] = sys_kevent_qos,
 	[375] = sys_kevent_id,
 	[381] = sys___mac_syscall,
+	[479] = sys_openbyid_np, // x86Code
 	[488] = sys_renameatx_np,
 	[494] = sys_persona,
 	[530] = sys_kqueue_workloop_ctl,

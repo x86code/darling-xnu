@@ -586,6 +586,9 @@ struct xnu_attrlist* alist, void *attributeBuffer, __SIZE_TYPE__ bufferSize, uns
 		uint32_t docid = 0;
 		if (st.st_flags & 0x40 /* UF_TRACKED */)
 			docid = (uint32_t) st.st_ino ? (uint32_t) st.st_ino : 1;
+		// x86Code: and resolvable by fsgetpath/openbyid_np, as APFS resolves document ids
+		if (docid && docid != fileid && fullpath[0])
+			fsgetpath_remember((uint32_t) devid, docid, fullpath);
 		getattr_put_u32(&p, docid);
 	}
 	if (common & ATTR_CMN_USERACCESS)
