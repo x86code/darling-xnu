@@ -1,4 +1,5 @@
 #include <darling/emulation/xnu_syscall/bsd/impl/kqueue/kevent.h>
+#include <darling/emulation/other/mach/foreign_hook.h>
 
 #include <stddef.h>
 #include <sys/errno.h>
@@ -13,7 +14,10 @@ long sys_kevent(int	kq, const struct kevent	*changelist, int nchanges,
 			struct	kevent *eventlist, int nevents,
 			const struct timespec *timeout)
 {
-	int ret = kevent_impl(kq, changelist, nchanges, eventlist, nevents, timeout);
+	FOREIGN_HOOK(int (*)(int, const struct kevent*, int, struct kevent*, int, const struct timespec*),
+		foreign, "__darling_sim_kevent_impl");
+	int ret = foreign ? foreign(kq, changelist, nchanges, eventlist, nevents, timeout)
+		: kevent_impl(kq, changelist, nchanges, eventlist, nevents, timeout);
 	if (ret < 0)
 		ret = -errno;
 	return ret;

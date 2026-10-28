@@ -2,6 +2,8 @@
 
 #include <darling/emulation/linux_premigration/linux-syscalls/linux.h>
 #include <darling/emulation/conversion/errno.h>
+#include <darling/emulation/conversion/fcntl/fcntl.h>
+#include <darling/emulation/xnu_syscall/bsd/helper/network/sostate.h>
 
 #include <darlingserver/rpc.h>
 
@@ -16,9 +18,24 @@ int _dserver_rpc_kqchan_proc_open_4libkqueue(int32_t pid, uint32_t flags, int* o
 int _dup_4libkqueue(int fd) {
 	int ret;
 
-	ret = LINUX_SYSCALL1(__NR_dup, fd);
+	// close-on-exec, as the other descriptors libkqueue makes are: a knote's copy must not keep the socket (or
+	// file) open in a program this one execs
+	ret = LINUX_SYSCALL3(__NR_fcntl, fd, LINUX_F_DUPFD_CLOEXEC, 0);
 	if (ret < 0)
 		ret = errno_linux_to_bsd(ret);
 
 	return ret;
+};
+
+// x86Code: from willi/darling-xnu#8: EVFILT_SOCK's view of a socket (sostate.h)
+int _socket_state_4libkqueue(int fd, struct socket_state_4libkqueue* state) {
+	return socket_state(fd, state);
+};
+
+int _socket_error_4libkqueue(int fd, int linux_error) {
+	return socket_error(fd, linux_error);
+};
+
+void _socket_watch_4libkqueue(int fd, int delta) {
+	socket_watch(fd, delta);
 };

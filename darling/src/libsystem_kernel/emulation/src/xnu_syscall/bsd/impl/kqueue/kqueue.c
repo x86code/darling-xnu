@@ -1,4 +1,5 @@
 #include <darling/emulation/xnu_syscall/bsd/impl/kqueue/kqueue.h>
+#include <darling/emulation/other/mach/foreign_hook.h>
 
 #include <stddef.h>
 #include <sys/errno.h>
@@ -16,7 +17,8 @@ int __attribute__((weak)) __attribute__((visibility("default"))) kqueue_impl(voi
 
 long sys_kqueue(void)
 {
-	int ret = kqueue_impl();
+	FOREIGN_HOOK(int (*)(void), foreign, "__darling_sim_kqueue_impl");
+	int ret = foreign ? foreign() : kqueue_impl();
 	if (ret < 0)
 		ret = -errno;
 	return ret;

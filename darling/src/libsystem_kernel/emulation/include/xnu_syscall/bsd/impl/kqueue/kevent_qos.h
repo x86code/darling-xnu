@@ -8,4 +8,8 @@ long sys_kevent_qos(int	kq, const struct kevent_qos_s *changelist, int nchanges,
 			struct	kevent_qos_s *eventlist, int nevents,
 			void* data_out, unsigned long* data_available, unsigned int flags);
 
+long sys_kevent_id(unsigned long long id, const struct kevent_qos_s *changelist, int nchanges,
+			struct kevent_qos_s *eventlist, int nevents,
+			void* data_out, unsigned long* data_available, unsigned int flags);
+
 #endif // LINUX_KEVENT_QOS_H
