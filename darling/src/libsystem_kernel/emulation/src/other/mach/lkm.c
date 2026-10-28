@@ -32,9 +32,26 @@ static bool use_per_thread_driver_fd = false;
 
 extern void _xtrace_postfork_child(void);
 
-void mach_driver_init(const char** applep)
+#ifndef VARIANT_DYLD
+// True when libSystem is not Darling's (e.g. an iOS simulator runtime's)
+bool darling_foreign_libsystem(void)
 {
-#ifdef VARIANT_DYLD
+	return _libkernel_functions != NULL && !darling_libkernel_functions_present();
+}
+
+// For a foreign libSystem, find a hook that Darling's libSystem would have
+// provided by overriding a weak symbol (e.g. libkqueue_sim's __darling_sim_*).
+// Returns NULL for Darling's own libSystem or if the hook isn't loaded.
+void* darling_foreign_hook(const char* name)
+{
+	if (!darling_foreign_libsystem() || _libkernel_functions->dlsym == NULL)
+		return NULL;
+	return _libkernel_functions->dlsym((void*) -2 /* RTLD_DEFAULT */, name);
+}
+#endif
+
+static void elfcalls_from_applep(const char** applep)
+{
 	if (applep != NULL)
 	{
 		int i;
@@ -47,12 +64,32 @@ void mach_driver_init(const char** applep)
 			}
 		}
 	}
-#else
-	// ask for elfcalls already set up by dyld
-	void* (*p2)(void);
-	_libkernel_functions->dyld_func_lookup("__dyld_get_elfcalls", (void**)&p2);
+}
 
-	_elfcalls = p2();
+void mach_driver_init(const char** applep)
+{
+#ifdef VARIANT_DYLD
+	elfcalls_from_applep(applep);
+#else
+	if (darling_libkernel_functions_present())
+	{
+		// ask for elfcalls already set up by dyld
+		void* (*p2)(void);
+		_libkernel_functions->dyld_func_lookup("__dyld_get_elfcalls", (void**)&p2);
+
+		_elfcalls = p2();
+	}
+	else
+	{
+		// A foreign (e.g. iOS simulator) libSystem: no dyld_func_lookup, but mldr's apple strings are passed through
+		if (applep)
+			elfcalls_from_applep(applep);
+		if (!_elfcalls)
+		{
+			__simple_printf("mach_driver_init: foreign libSystem and no elf_calls in apple strings\n");
+			__builtin_trap();
+		}
+	}
 
 	if (applep) {
 		// this is not a fork; guard the main thread's RPC FD we get from mldr

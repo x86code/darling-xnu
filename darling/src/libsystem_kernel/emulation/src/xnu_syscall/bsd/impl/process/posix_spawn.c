@@ -44,11 +44,118 @@
 
 extern _libkernel_functions_t _libkernel_functions;
 
+int darling_in_spawn_child = 0; // x86Code: see foreign_hook.h
+
+/*
+ * x86Code: port actions (posix_spawnattr_setspecialport_np, ..._set_registered_ports_np).
+ * xpcproxy_sim hands a job its bootstrap port this way. Port names do not survive
+ * fork(), but special ports are inherited, so for a real spawn the parent installs
+ * the requested special ports on itself around the fork and then restores its own.
+ * With POSIX_SPAWN_SETEXEC they are simply set on this task before exec.
+ */
+extern mach_port_t mach_task_self_;
+extern kern_return_t task_get_special_port(mach_port_t task, int which, mach_port_t* port);
+extern kern_return_t mach_ports_register(mach_port_t task, mach_port_t* ports, unsigned int count);
+extern kern_return_t mach_port_deallocate(mach_port_t task, mach_port_t name);
+
+#define SPAWN_SAVED_PORTS 8
+
+// Layout of [xnu]/bsd/sys/spawn_internal.h
+#define PSPA_SPECIAL 0
+#define PSPA_IMP_WATCHPORTS 3
+#define PSPA_REGISTERED_PORTS 4
+
+struct spawn_port_action
+{
+	int port_type;
+	uint32_t mask;
+	mach_port_t new_port;
+	int behavior;
+	int flavor;
+	int which;
+};
+
+struct spawn_port_actions
+{
+	int pspa_alloc;
+	int pspa_count;
+	struct spawn_port_action pspa_actions[];
+};
+
+struct spawn_saved_port
+{
+	int which;
+	mach_port_t port;
+};
+
+static struct spawn_port_actions* spawn_port_actions(const struct _posix_spawn_args_desc* desc)
+{
+	if (desc == NULL || desc->pactp == NULL || desc->port_actions_size < sizeof(struct spawn_port_actions))
+		return NULL;
+	return desc->pactp;
+}
+
+// Set the special ports (and with `registered`, the registered ports) on this task.
+// With `saved`, remember the replaced special ports there; returns how many.
+static int spawn_set_ports(struct spawn_port_actions* acts, bool registered, struct spawn_saved_port* saved)
+{
+	mach_port_t reg[3];
+	unsigned int nreg = 0;
+	int i, nsaved = 0;
+
+	for (i = 0; i < acts->pspa_count; i++)
+	{
+		const struct spawn_port_action* act = &acts->pspa_actions[i];
+		switch (act->port_type)
+		{
+			case PSPA_SPECIAL:
+				if (saved != NULL)
+				{
+					if (nsaved == SPAWN_SAVED_PORTS)
+						break;
+					saved[nsaved].which = act->which;
+					if (task_get_special_port(mach_task_self_, act->which, &saved[nsaved].port) != KERN_SUCCESS)
+						saved[nsaved].port = MACH_PORT_NULL;
+					nsaved++;
+				}
+				// like XNU's port actions, this accepts immovable rights (job bootstrap ports are)
+				dserver_rpc_spawn_set_special_port(act->which, act->new_port);
+				break;
+			case PSPA_REGISTERED_PORTS:
+				if (registered && nreg < 3)
+					reg[nreg++] = act->new_port;
+				break;
+			case PSPA_IMP_WATCHPORTS:
+				// importance (priority) donation only; nothing to emulate
+				break;
+			default:
+				__simple_printf("posix_spawn: port action %d not supported\n", act->port_type);
+		}
+	}
+	if (nreg > 0)
+		mach_ports_register(mach_task_self_, reg, nreg);
+	return nsaved;
+}
+
+static void spawn_restore_ports(const struct spawn_saved_port* saved, int nsaved)
+{
+	int i;
+	for (i = 0; i < nsaved; i++)
+	{
+		dserver_rpc_spawn_set_special_port(saved[i].which, saved[i].port);
+		if (saved[i].port != MACH_PORT_NULL)
+			mach_port_deallocate(mach_task_self_, saved[i].port);
+	}
+}
+
 long sys_posix_spawn(int* pid, const char* path, const struct _posix_spawn_args_desc* desc,
 		char** argvp, char** envp)
 {
 	int ret, my_pid;
 	int pipe[2] = { -1, -1 };
+	struct spawn_port_actions* port_actions = spawn_port_actions(desc);
+	struct spawn_saved_port saved_ports[SPAWN_SAVED_PORTS];
+	int nsaved_ports = 0;
 
 	if (desc && desc->attrp && desc->attrp->psa_flags & POSIX_SPAWN_SETEXEC)
 		goto no_fork;
@@ -61,15 +168,25 @@ long sys_posix_spawn(int* pid, const char* path, const struct _posix_spawn_args_
 	// libsystem atfork callbacks to set up the environment for some of the calls we need
 	// to make for the setup
 
-	_libkernel_functions->posix_spawn_prepare();
+	if (darling_libkernel_functions_present())
+		_libkernel_functions->posix_spawn_prepare();
+
+	if (port_actions != NULL)
+		nsaved_ports = spawn_set_ports(port_actions, false, saved_ports);
 
 	if ((my_pid = sys_fork()) == 0)
 	{
+		darling_in_spawn_child = 1;
 		// child
 		// close the reading side
 		close_internal(pipe[0]);
 
-		_libkernel_functions->posix_spawn_child();
+		if (darling_libkernel_functions_present())
+			_libkernel_functions->posix_spawn_child();
+
+		// x86Code: this exec completes the spawn; darlingserver must not report it as NOTE_EXEC
+		// (on macOS it happens before posix_spawn returns, so no one can observe it)
+		dserver_rpc_spawn_exec();
 
 no_fork:
 		if (desc && desc->attrp)
@@ -329,6 +446,9 @@ no_fork:
 			envp = new_envp;
 		}
 
+		if (port_actions != NULL && desc->attrp && (desc->attrp->psa_flags & POSIX_SPAWN_SETEXEC))
+			spawn_set_ports(port_actions, true, NULL);
+
 		ret = sys_execve((char*) path, argvp, envp);
 fail:
 		//__simple_kprintf("posix_spawn is failing with %d\n", ret);
@@ -353,7 +473,11 @@ fail:
 		// close the writing side
 		close_internal(pipe[1]);
 
-		_libkernel_functions->posix_spawn_parent();
+		if (nsaved_ports > 0)
+			spawn_restore_ports(saved_ports, nsaved_ports);
+
+		if (darling_libkernel_functions_present())
+			_libkernel_functions->posix_spawn_parent();
 
 		if (my_pid < 0)
 		{

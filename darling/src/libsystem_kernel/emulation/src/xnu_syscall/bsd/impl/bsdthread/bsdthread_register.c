@@ -3,6 +3,7 @@
 #include <sys/errno.h>
 #include <stdint.h>
 #include <pthread/tsd_private.h>
+#include <darling/emulation/common/tsd.h>
 
 #include <darling/emulation/common/base.h>
 #include <darling/emulation/conversion/errno.h>
@@ -21,6 +22,9 @@ bsdwqthread_entry_t wqueue_entry_point;
 #define PTHREAD_FEATURE_QOS_DEFAULT 0x40000000
 #define WORKQ_FEATURE_FINEPRIO 0x02
 #define WORKQ_FEATURE_KEVENT 0x40
+#define WORKQ_FEATURE_WORKLOOP 0x80
+#define PTHREAD_FEATURE_BSDTHREADCTL 0x04
+#define PTHREAD_FEATURE_SETSELF 0x08
 
 struct _pthread_registration_data {
 	uint64_t version;
@@ -33,6 +37,10 @@ struct _pthread_registration_data {
 } __attribute__ ((packed));
 
 static struct _pthread_registration_data g_pth_regdata;
+
+#ifndef VARIANT_DYLD
+extern bool darling_foreign_libsystem(void);
+#endif
 
 long sys_bsdthread_register(void* thread_start, void* wqthread, int pthsize,
 		const struct _pthread_registration_data* pth_regdata,
@@ -49,6 +57,15 @@ long sys_bsdthread_register(void* thread_start, void* wqthread, int pthsize,
 		__simple_abort();
 	}
 
+#ifndef VARIANT_DYLD
+	// The iOS simulator's libdispatch requires QoS maintenance and kevent workqueues;
+	// those processes get the XNU-style asynchronous kevent workq (see kevent_qos.c).
+	// libpthread insists on BSDTHREADCTL and SETSELF whenever any feature is reported.
+	if (darling_foreign_libsystem())
+		return WORKQ_FEATURE_KEVENT | WORKQ_FEATURE_WORKLOOP | WORKQ_FEATURE_FINEPRIO | PTHREAD_FEATURE_QOS_MAINTENANCE
+			| PTHREAD_FEATURE_DISPATCHFUNC | PTHREAD_FEATURE_QOS_DEFAULT
+			| PTHREAD_FEATURE_BSDTHREADCTL | PTHREAD_FEATURE_SETSELF;
+#endif
 	return /* WORKQ_FEATURE_KEVENT | WORKQ_FEATURE_FINEPRIO | PTHREAD_FEATURE_QOS_MAINTENANCE 
 		| PTHREAD_FEATURE_DISPATCHFUNC | PTHREAD_FEATURE_QOS_DEFAULT */ 0;
 }
@@ -122,8 +139,45 @@ void pthread_entry_point_wrapper(void* self, int thread_port, void* funptr,
 void wqueue_entry_point_wrapper(void* self, int thread_port, void* stackaddr,
 		void* item, int reuse, int nevents)
 {
+	uintptr_t sp;
+
 	sigexc_thread_setup();
+	// x86Code: remember where this thread entered _start_wqthread, so a reused thread can
+	// re-enter on the same (empty) stack, see wqueue_entry_point_asm_jump_entry_stack
+	__asm__ __volatile__ ("movq %%rsp, %0" : "=r"(sp));
+	_pthread_setspecific_direct(__PTK_DARLING_WQ_ENTRY_SP, sp);
+	_pthread_setspecific_direct(__PTK_DARLING_WQ_FLAGS, reuse); // x86Code: see wq_mgr_* in workq_kernreturn.c
 	wqueue_entry_point_asm_jump(self, thread_port, stackaddr, item, reuse, nevents);
+}
+
+// x86Code: re-enter _start_wqthread for a reused workqueue thread with rsp reset to where the
+// thread first entered it, as XNU's kernel starts each workqueue invocation on a fresh stack.
+// Jumping from deep inside the WQOPS_THREAD_RETURN call chain leaked that chain on every
+// reuse until a busy daemon's stack overflowed (notifyd after ~450 reuses).
+void wqueue_entry_point_asm_jump_entry_stack(void* self, int thread_port, void* stackaddr,
+		void* item, int reuse, int nevents) {
+	uintptr_t entry_sp = _pthread_getspecific_direct(__PTK_DARLING_WQ_ENTRY_SP);
+	_pthread_setspecific_direct(__PTK_DARLING_WQ_FLAGS, reuse); // x86Code: see wq_mgr_* in workq_kernreturn.c
+	if (entry_sp == 0)
+		wqueue_entry_point_asm_jump(self, thread_port, stackaddr, item, reuse, nevents);
+
+	register void* arg1 asm("rdi") = self;
+	register int   arg2 asm("esi") = thread_port;
+	register void* arg3 asm("rdx") = stackaddr;
+	register void* arg4 asm("rcx") = item;
+	register int   arg5 asm("r8d") = reuse;
+	register int   arg6 asm("r9d") = nevents;
+	register uintptr_t sp asm("r10") = entry_sp;
+	register void* entry asm("r11") = wqueue_entry_point;
+
+	__asm__ __volatile__ (
+		"movq %[sp], %%rsp\n"
+		"jmpq *%[entry]\n"
+		::
+		"r"(arg1),"r"(arg2),"r"(arg3),"r"(arg4),"r"(arg5),"r"(arg6),
+		[sp] "r"(sp), [entry] "r"(entry)
+	);
+	__builtin_unreachable();
 }
 
 // Before you make any changes to the assembly code, I strongly recommend looking at the `_start_wqthread`
@@ -181,3 +235,4 @@ void wqueue_entry_point_asm_jump(void* self, int thread_port, void* stackaddr,
 	// _start_wqthread never returns
 	__builtin_unreachable();
 }
+

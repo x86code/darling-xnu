@@ -77,6 +77,15 @@ typedef const struct _libkernel_functions {
 #endif
 } *_libkernel_functions_t;
 
+#ifdef DARLING
+// Darling's libSystem passes version 4 followed by the Darling-only fields above.
+// Newer Apple libSystems (e.g. the iOS simulator's) use version 5+ and put their
+// own fields in those slots, so the Darling fields are only valid at version 4.
+#define DARLING_LIBKERNEL_FUNCTIONS_VERSION 4
+#define darling_libkernel_functions_present() \
+	(_libkernel_functions != NULL && _libkernel_functions->version == DARLING_LIBKERNEL_FUNCTIONS_VERSION)
+#endif
+
 typedef const struct _libkernel_string_functions {
 	/* The following functions are included in version 1 of this structure */
 	unsigned long version;

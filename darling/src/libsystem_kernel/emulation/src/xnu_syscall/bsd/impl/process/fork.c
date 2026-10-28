@@ -1,3 +1,4 @@
+#include <darling/emulation/xnu_syscall/bsd/impl/psynch/ulock_wait.h> // x86Code
 #include <darling/emulation/xnu_syscall/bsd/impl/process/fork.h>
 
 #include <_libkernel_init.h>
@@ -13,6 +14,7 @@
 #include <darling/emulation/other/mach/lkm.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/unistd/close.h>
 #include <darling/emulation/common/guarded/table.h>
+#include <darling/emulation/xnu_syscall/bsd/helper/network/socktables.h>
 
 #include <darlingserver/rpc.h>
 
@@ -38,6 +40,9 @@ long sys_fork(void)
 		// we don't need to close it ourselves.
 		// that should also take care of closing descriptors for any other threads.
 		guard_table_postfork_child();
+		// x86Code: willi/darling-xnu#7/#8: PF_ROUTE answering ends, held socket errors, SO_NOSIGPIPE flags and their locks
+		socket_tables_atfork_child();
+		ulock_atfork_child(); // x86Code: no waiters in the child
 
 		// create a new dserver RPC socket
 		__dserver_per_thread_socket_refresh();
