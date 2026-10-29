@@ -63,6 +63,24 @@ static __inline__ unsigned int
 _os_cpu_number(void)
 {
 #ifdef DARLING
+#if defined(__x86_64__) || defined(__i386__)
+	// x86Code: Linux keeps (node << 12) | cpu in IA32_TSC_AUX (what the vDSO's getcpu reads); RDTSCP returns it
+	// without a syscall. libmalloc and libdispatch ask for the CPU on hot paths: one getcpu syscall each made
+	// ~30,000 syscalls a second in one thread of installd. CPUs without RDTSCP (CPUID 0x80000001 EDX bit 27) keep
+	// the syscall.
+	static int __os_rdtscp = -1;
+	if (__builtin_expect(__os_rdtscp < 0, 0)) {
+		unsigned int a = 0x80000001, b, c = 0, d;
+		__asm__ volatile("cpuid" : "+a"(a), "=b"(b), "+c"(c), "=d"(d));
+		__os_rdtscp = (d >> 27) & 1;
+	}
+	if (__os_rdtscp) {
+		unsigned int aux, lo, hi;
+		__asm__ volatile("rdtscp" : "=a"(lo), "=d"(hi), "=c"(aux));
+		(void)lo; (void)hi;
+		return aux & 0xfff;
+	}
+#endif
 	extern int __linux_syscall(int nr, ...);
 
 	unsigned int cpu_num = 0;
