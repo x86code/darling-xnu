@@ -279,6 +279,26 @@ static int vch_resolve(const char* path, bool in_prefix, bool follow, char* out,
 	return rv;
 }
 
+// x86Code: "/proc/<pid>/<file>" for a few plain files of the prefix's procfs. The walk lstat()s /proc, /proc/<pid>
+// and the file for each: launchd_sim reads /proc/<pid>/stat and cmdline of the requestor for every lookup it logs
+// (~2,000 lstat a second while an app launches). None of them is a symlink (unlike /proc/self, exe, cwd, root, fd/),
+// so the walk's result is the prefix followed by the path; a pid that doesn't exist fails in the caller's syscall.
+static bool vch_proc_file(const char* path)
+{
+	static const char* const files[] = { "stat", "cmdline", "status", "statm", "comm", "environ", "auxv", NULL };
+	if (strncmp(path, "/proc/", 6) != 0 || path[6] < '1' || path[6] > '9')
+		return false;
+	const char* p = path + 6;
+	while (*p >= '0' && *p <= '9')
+		p++;
+	if (*p++ != '/')
+		return false;
+	for (int i = 0; files[i]; i++)
+		if (strcmp(p, files[i]) == 0)
+			return true;
+	return false;
+}
+
 // true if it produced the result (ctxt->current_path, *out_rv); false: run the walk as before
 static bool vchroot_fast(struct context* ctxt, const char* input_path, int* out_rv)
 {
@@ -311,6 +331,14 @@ static bool vchroot_fast(struct context* ctxt, const char* input_path, int* out_
 			if (n + 1 > (int)sizeof(path))
 				return false;
 			memcpy(path, input_path, n + 1);
+			if (vch_proc_file(path) && prefix_path_len + n + 1 <= (int)sizeof(ctxt->current_path))
+			{
+				memcpy(ctxt->current_path, prefix_path, prefix_path_len);
+				memcpy(ctxt->current_path + prefix_path_len, path, n + 1);
+				ctxt->current_path_len = prefix_path_len + n;
+				*out_rv = 0;
+				return true;
+			}
 		}
 	}
 	else

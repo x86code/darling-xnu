@@ -199,6 +199,7 @@ set(xnu_syscall_bsd_sources
 	src/xnu_syscall/bsd/impl/process/fork.c
 	src/xnu_syscall/bsd/impl/process/getpriority.c
 	src/xnu_syscall/bsd/impl/process/posix_spawn.c
+	src/xnu_syscall/bsd/impl/process/pid_suspend.c
 	src/xnu_syscall/bsd/impl/process/setpriority.c
 	src/xnu_syscall/bsd/impl/process/vfork.c
 	src/xnu_syscall/bsd/impl/process/wait4.c

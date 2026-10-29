@@ -81,6 +81,7 @@
 #include <darling/emulation/xnu_syscall/bsd/impl/process/getpriority.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/process/posix_spawn.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/process/setpriority.h>
+#include <darling/emulation/xnu_syscall/bsd/impl/process/pid_suspend.h> // x86Code
 #include <darling/emulation/xnu_syscall/bsd/impl/process/vfork.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/process/wait4.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/process/waitid.h>
@@ -482,6 +483,8 @@ void* __bsd_syscall_table[600] = {
 	[430] = sys_fileport_makeport,
 	[431] = sys_fileport_makefd,
 	[432] = sys_audit_session_port,
+	[433] = sys_pid_suspend, // x86Code
+	[434] = sys_pid_resume, // x86Code
 	[441] = sys_guarded_open_np,
 	[442] = sys_guarded_close_np,
 	[443] = sys_guarded_kqueue_np,
