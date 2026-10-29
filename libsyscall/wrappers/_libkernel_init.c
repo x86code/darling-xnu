@@ -88,6 +88,19 @@ __libkernel_init(_libkernel_functions_t fns,
 	}
 
 #ifdef DARLING
+	{
+		// x86Code: an arm64 iOS-simulator process (see darling_x86code_arm64 in lkm.c)
+		extern bool darling_x86code_arm64;
+		for (size_t i = 0; envp != NULL && envp[i] != NULL; i++) {
+			const char *a = envp[i], *b = "X86CODE_A64_EXE=";
+			while (*b && *a == *b) {
+				a++, b++;
+			}
+			if (*b == '\0') {
+				darling_x86code_arm64 = true;
+			}
+		}
+	}
 	mach_init(apple);
 	sigexc_setup();
 #else
