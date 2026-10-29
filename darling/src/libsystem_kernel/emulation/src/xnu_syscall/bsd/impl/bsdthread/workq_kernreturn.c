@@ -197,6 +197,16 @@ static void wq_spawn(int flags, struct wq_kevent_data* wq_event, int affinity)
 {
 	int i;
 
+	// x86Code: arm64 simulator processes (every thread runs a JIT with its own code cache and translation state,
+	// ~20 MB) get at most 24 workqueue threads instead of 64: a slow JIT let backlogs grow
+	// launchd_sim to 66 threads and the boot past its memory budget
+	{
+		extern bool darling_x86code_arm64;
+		static int capped;
+		if (darling_x86code_arm64 && !__atomic_exchange_n(&capped, 1, __ATOMIC_ACQ_REL))
+			__atomic_fetch_sub(&workq_sem, WQ_MAX_THREADS - 24, __ATOMIC_ACQ_REL);
+	}
+
 	for (i = 0; i < affinity; i++)
 	{
 		// Increase the amount of running threads
