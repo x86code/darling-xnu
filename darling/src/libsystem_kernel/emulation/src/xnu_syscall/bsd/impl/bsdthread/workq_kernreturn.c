@@ -207,6 +207,47 @@ static void wq_cap_init(void)
 		__atomic_fetch_sub(&workq_constrained_sem, WQ_MAX_THREADS - 24, __ATOMIC_ACQ_REL);
 }
 
+static int sem_trydown(int* sem)
+{
+	int v = __atomic_load_n(sem, __ATOMIC_ACQUIRE);
+	while (v > 0)
+	{
+		if (__atomic_compare_exchange_n(sem, &v, v - 1, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE))
+			return 1;
+	}
+	return 0;
+}
+
+static void wq_start_one(int flags, struct wq_kevent_data* wq_event);
+
+// x86Code (Speed 17): on arm64 a constrained request made while the capped constrained pool is full is queued here,
+// as XNU queues it, instead of blocking the requester in sem_down. A requester blocked there could be a worker the
+// pool was waiting for: geod again sat with 24 workers in futex waits and Maps' main thread black for good (Speed 17
+// run fb). A worker whose run ends, and every new request, start queued ones while a constrained slot is free.
+static libsimple_lock_t wq_cpend_lock = LIBSIMPLE_LOCK_INITIALIZER;
+static int wq_cpend_flags[WQ_MAX_THREADS * 4];
+static int wq_cpend_n = 0;
+
+static void wq_cpend_drain(void)
+{
+	for (;;)
+	{
+		int f;
+		libsimple_lock_lock(&wq_cpend_lock);
+		if (wq_cpend_n == 0 || !sem_trydown(&workq_constrained_sem))
+		{
+			libsimple_lock_unlock(&wq_cpend_lock);
+			return;
+		}
+		f = wq_cpend_flags[0];
+		for (int k = 1; k < wq_cpend_n; k++)
+			wq_cpend_flags[k - 1] = wq_cpend_flags[k];
+		wq_cpend_n--;
+		libsimple_lock_unlock(&wq_cpend_lock);
+		wq_start_one(f, NULL);
+	}
+}
+
 // x86Code: wake a parked workqueue thread (or create one) per requested thread
 static void wq_spawn(int flags, struct wq_kevent_data* wq_event, int affinity)
 {
@@ -223,11 +264,31 @@ static void wq_spawn(int flags, struct wq_kevent_data* wq_event, int affinity)
 	wq_cap_init();
 	const bool constrained = wq_flags_constrained(flags);
 
+	extern bool darling_x86code_arm64;
 	for (i = 0; i < affinity; i++)
 	{
 		// Increase the amount of running threads
+		if (constrained && darling_x86code_arm64 && wq_event == NULL)
+		{
+			libsimple_lock_lock(&wq_cpend_lock);
+			if (wq_cpend_n < (int) (sizeof(wq_cpend_flags) / sizeof(wq_cpend_flags[0])))
+			{
+				wq_cpend_flags[wq_cpend_n++] = flags;
+				libsimple_lock_unlock(&wq_cpend_lock);
+				wq_cpend_drain();
+				continue;
+			}
+			libsimple_lock_unlock(&wq_cpend_lock);
+		}
 		if (constrained)
 			sem_down(&workq_constrained_sem, -1);
+		wq_start_one(flags, wq_event);
+	}
+}
+
+static void wq_start_one(int flags, struct wq_kevent_data* wq_event)
+{
+	{
 		sem_down(&workq_sem, -1);
 
 		os_unfair_lock_lock(&workq_parked_lock);
@@ -251,7 +312,7 @@ static void wq_spawn(int flags, struct wq_kevent_data* wq_event, int affinity)
 			sem_up(&thread->sem);
 			os_unfair_lock_unlock(&workq_parked_lock);
 
-			continue;
+			return;
 		}
 
 		os_unfair_lock_unlock(&workq_parked_lock);
@@ -416,6 +477,8 @@ long sys_workq_kernreturn(int options, void* item, int affinity, int prio)
 				sem_up(&workq_constrained_sem);
 
 			os_unfair_lock_unlock(&workq_parked_lock);
+			if (wq_flags_constrained(run_flags))
+				wq_cpend_drain();
 
 			// Wait until someone calls WQOPS_QUEUE_REQTHREADS
 			// and wakes us up
