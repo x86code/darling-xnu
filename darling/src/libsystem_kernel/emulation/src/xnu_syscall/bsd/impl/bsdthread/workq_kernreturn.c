@@ -68,6 +68,8 @@
 #define WORKQ_EXIT_THREAD_NKEVENT (-1)
 
 static int workq_sem = WQ_MAX_THREADS; // max 64 threads in use
+// x86Code: constrained (not overcommit / kevent / workloop / event manager) threads in use, see wq_spawn
+static int workq_constrained_sem = WQ_MAX_THREADS;
 static os_unfair_lock workq_parked_lock = OS_UNFAIR_LOCK_INIT;
 // static int workq_parked_threads = 0; // num spawned, but unused threads
 static int workq_parked[WQ_MAX_THREADS];
@@ -192,24 +194,40 @@ static int extract_wq_flags(int priority) {
 };
 
 #ifndef VARIANT_DYLD
+static bool wq_flags_constrained(uintptr_t flags)
+{
+	return !(flags & (WQ_FLAG_THREAD_OVERCOMMIT | WQ_FLAG_THREAD_KEVENT | WQ_FLAG_THREAD_WORKLOOP | WQ_FLAG_THREAD_EVENT_MANAGER));
+}
+
+static void wq_cap_init(void)
+{
+	extern bool darling_x86code_arm64;
+	static int capped;
+	if (darling_x86code_arm64 && !__atomic_exchange_n(&capped, 1, __ATOMIC_ACQ_REL))
+		__atomic_fetch_sub(&workq_constrained_sem, WQ_MAX_THREADS - 24, __ATOMIC_ACQ_REL);
+}
+
 // x86Code: wake a parked workqueue thread (or create one) per requested thread
 static void wq_spawn(int flags, struct wq_kevent_data* wq_event, int affinity)
 {
 	int i;
 
 	// x86Code: arm64 simulator processes (every thread runs a JIT with its own code cache and translation state,
-	// ~20 MB) get at most 24 workqueue threads instead of 64: a slow JIT let backlogs grow
-	// launchd_sim to 66 threads and the boot past its memory budget
-	{
-		extern bool darling_x86code_arm64;
-		static int capped;
-		if (darling_x86code_arm64 && !__atomic_exchange_n(&capped, 1, __ATOMIC_ACQ_REL))
-			__atomic_fetch_sub(&workq_sem, WQ_MAX_THREADS - 24, __ATOMIC_ACQ_REL);
-	}
+	// ~20 MB) get at most 24 constrained workqueue threads instead of 64: a slow JIT let backlogs grow
+	// launchd_sim to 66 threads and the boot past its memory budget.
+	// Speed 15: the cap covers constrained requests only, as XNU's constrained pool does. Overcommit, kevent,
+	// workloop and event manager requests (XPC replies, dispatch_sync wakeups, serial queues) keep the 64 thread
+	// limit. With them under the cap too, the requester (here blocking in sem_down, where XNU queues the request)
+	// deadlocked once 24 workers sat in synchronous XPC waits whose replies needed one more thread: geod at Maps'
+	// first open (its main thread waits in GEOConfigGetDictionary), black for ~60 s.
+	wq_cap_init();
+	const bool constrained = wq_flags_constrained(flags);
 
 	for (i = 0; i < affinity; i++)
 	{
 		// Increase the amount of running threads
+		if (constrained)
+			sem_down(&workq_constrained_sem, -1);
 		sem_down(&workq_sem, -1);
 
 		os_unfair_lock_lock(&workq_parked_lock);
@@ -367,8 +385,10 @@ long sys_workq_kernreturn(int options, void* item, int affinity, int prio)
 			dthread_t dthread;
 			bool terminating = false;
 
+			// x86Code: the run's flags (wq_spawn's) say which limits it counted against
+			const uintptr_t run_flags = (uintptr_t) _pthread_getspecific_direct(__PTK_DARLING_WQ_FLAGS);
 			// x86Code: an event manager thread's run ends here
-			if ((uintptr_t) _pthread_getspecific_direct(__PTK_DARLING_WQ_FLAGS) & WQ_FLAG_THREAD_EVENT_MANAGER)
+			if (run_flags & WQ_FLAG_THREAD_EVENT_MANAGER)
 			{
 				_pthread_setspecific_direct(__PTK_DARLING_WQ_FLAGS, 0);
 				wq_mgr_release();
@@ -392,6 +412,8 @@ long sys_workq_kernreturn(int options, void* item, int affinity, int prio)
 
 			// Decrease the amount of running threads
 			sem_up(&workq_sem);
+			if (wq_flags_constrained(run_flags))
+				sem_up(&workq_constrained_sem);
 
 			os_unfair_lock_unlock(&workq_parked_lock);
 
