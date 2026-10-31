@@ -12,6 +12,7 @@
 #include <darling/emulation/xnu_syscall/bsd/impl/kqueue/kqueue.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/bsdthread/workq_kernreturn.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/kqueue/kevent64.h>
+#include <darling/emulation/xnu_syscall/bsd/impl/unistd/close.h>
 
 static int default_kq = -1;
 
@@ -371,6 +372,38 @@ static void wq_deliver(struct kevent_qos_s* events, int n, int priority)
 }
 
 extern void sigexc_setup2(void);
+extern long sys_open(const char* filename, int flags, unsigned int mode);
+extern long sys_getpid(void);
+extern void __simple_fprintf(int fd, const char* format, ...);
+
+// x86Code (debug): if /private/var/tmp/x86code-wqdbg exists, the manager logs the events it receives to
+// /private/tmp/x86code-wqmgr.<pid>.log: the first 300, then one in 20000 (finds a knote that fires nonstop)
+static int wq_dbg_fd = -2;
+static unsigned long wq_dbg_n;
+static void wq_dbg_event(const struct kevent64_s* ev, bool live, uint32_t qos, uint64_t workloop)
+{
+	if (wq_dbg_fd == -2)
+	{
+		int probe = sys_open("/private/var/tmp/x86code-wqdbg", O_RDONLY, 0);
+		wq_dbg_fd = -1;
+		if (probe >= 0)
+		{
+			char path[64];
+			close_internal(probe);
+			__simple_sprintf(path, "/private/tmp/x86code-wqmgr.%d.log", (int) sys_getpid());
+			wq_dbg_fd = sys_open(path, O_WRONLY | O_CREAT | O_APPEND, 0644);
+		}
+	}
+	if (wq_dbg_fd < 0)
+		return;
+	wq_dbg_n++;
+	if (wq_dbg_n > 300 && wq_dbg_n % 20000)
+		return;
+	__simple_fprintf(wq_dbg_fd, "#%lu ident=%llx filter=%d flags=0x%x fflags=0x%x data=%lld udata=%llx ext0=%llx ext1=%llx live=%d qos=0x%x wl=%llx\n",
+		wq_dbg_n, (unsigned long long) ev->ident, ev->filter, ev->flags, ev->fflags, (long long) ev->data,
+		(unsigned long long) ev->udata, (unsigned long long) ev->ext[0], (unsigned long long) ev->ext[1], live, qos,
+		(unsigned long long) workloop);
+}
 
 static void* wq_kevent_manager(void* unused)
 {
@@ -401,8 +434,12 @@ static void* wq_kevent_manager(void* unused)
 			kevent_64_to_qos(&ev64[i], &ev);
 			// x86Code: drop events of knotes deleted since the copyout (see wq_knote_live_locked)
 			if (!wq_knote_live(&ev))
+			{
+				wq_dbg_event(&ev64[i], false, 0, 0);
 				continue;
+			}
 			ev.qos = wq_qos_lookup(&ev, &workloop);
+			wq_dbg_event(&ev64[i], true, ev.qos, workloop);
 			if (workloop != 0)
 			{
 				wl_post_event(workloop, &ev);
