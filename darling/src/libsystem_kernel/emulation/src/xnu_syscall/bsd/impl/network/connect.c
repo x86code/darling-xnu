@@ -66,3 +66,50 @@ long sys_connect_nocancel(int fd, const void* name, int socklen)
 
 	return ret;
 }
+
+// x86Code: connectx (BSD 447). iOS 27's Network.framework opens every TCP flow with connectx(), not connect(); without it
+// the call failed and NSURLSession reported "The Internet connection appears to be offline" (ENETDOWN on the flow).
+// sa_endpoints_t: sae_srcif (u32), sae_srcaddr, sae_srcaddrlen, sae_dstaddr, sae_dstaddrlen. A source address is bound
+// first; the interface index (IP_BOUND_IF) is advisory here. Data passed with the call (TCP fast open / resume on
+// read-write) is not sent: *len = 0 tells the caller none was written, and it writes it once connected.
+struct bsd_sa_endpoints {
+	unsigned int sae_srcif;
+	const void* sae_srcaddr;
+	unsigned int sae_srcaddrlen;
+	const void* sae_dstaddr;
+	unsigned int sae_dstaddrlen;
+};
+extern long sys_bind(int fd, const void* name, int socklen);
+
+long sys_connectx(int fd, const void* endpoints, unsigned int associd, unsigned int flags, const void* iov,
+		unsigned int iovcnt, unsigned long* len, unsigned int* connid)
+{
+	const struct bsd_sa_endpoints* ep = (const struct bsd_sa_endpoints*) endpoints;
+	long ret;
+
+	CANCELATION_POINT();
+	if (!ep || !ep->sae_dstaddr || !ep->sae_dstaddrlen)
+		return -EINVAL;
+	if (len)
+		*len = 0;
+	if (ep->sae_srcaddr && ep->sae_srcaddrlen)
+	{
+		ret = sys_bind(fd, ep->sae_srcaddr, ep->sae_srcaddrlen);
+		if (ret < 0)
+			return ret;
+	}
+	ret = sys_connect_nocancel(fd, ep->sae_dstaddr, ep->sae_dstaddrlen);
+	if (ret < 0)
+		return ret;
+	if (connid)
+		*connid = 1;
+	return 0;
+}
+
+// x86Code: disconnectx (BSD 448): one connection per socket here (connectx's id 1): shut it down both ways
+extern long sys_shutdown(int fd, int how);
+long sys_disconnectx(int fd, unsigned int associd, unsigned int connid)
+{
+	(void) associd; (void) connid;
+	return sys_shutdown(fd, 2 /* SHUT_RDWR */);
+}
