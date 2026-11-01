@@ -45,6 +45,11 @@ long sys_renameat(int oldfd, const char* oldpath, int newfd, const char* newpath
 #define DARWIN_RENAME_SECLUDE 0x00000001
 #define DARWIN_RENAME_SWAP    0x00000002
 #define DARWIN_RENAME_EXCL    0x00000004
+// x86Code Speed 26: newer flags; searchd renames its index state with them and got ENOTSUP (Files: "Content
+// Unavailable"). No symlink in the paths is followed (NOFOLLOW_ANY: the last component isn't, as rename never does);
+// RESOLVE_BENEATH and SECLUDE (a hint) don't change a rename inside the prefix.
+#define DARWIN_RENAME_NOFOLLOW_ANY    0x00000010
+#define DARWIN_RENAME_RESOLVE_BENEATH 0x00000020
 #define LINUX_RENAME_NOREPLACE 1
 #define LINUX_RENAME_EXCHANGE  2
 
@@ -53,7 +58,8 @@ long sys_renameatx_np(int oldfd, const char* oldpath, int newfd, const char* new
 	int ret, lflags = 0;
 	struct vchroot_expand_args vc, vc2;
 
-	if (flags & ~(DARWIN_RENAME_SWAP | DARWIN_RENAME_EXCL))
+	if (flags & ~(DARWIN_RENAME_SECLUDE | DARWIN_RENAME_SWAP | DARWIN_RENAME_EXCL | DARWIN_RENAME_NOFOLLOW_ANY |
+			DARWIN_RENAME_RESOLVE_BENEATH))
 		return -ENOTSUP;
 	if ((flags & DARWIN_RENAME_SWAP) && (flags & DARWIN_RENAME_EXCL))
 		return -EINVAL;
