@@ -25,6 +25,79 @@ enum {
 	_HW_CPUTHREADTYPE,
 	_HW_64BITCAPABLE,
 	_HW_CPUFREQUENCY = 15,
+	_HW_CPUFAMILY = 1100, // x86Code (Speed 27): the arm64 identity below
+	_HW_CPUSUBFAMILY,
+	_HW_OPTIONAL,
+	_HW_OPTIONAL_ARM,
+};
+
+/*
+ * x86Code (Speed 27): an arm64 iOS-simulator process (host/arm64host; darling_x86code_arm64) runs on an emulated
+ * Apple-silicon CPU, and a Mac's simulator processes see the Mac's: hw.cputype CPU_TYPE_ARM64, hw.machine "arm64"
+ * (uname), hw.cpufamily, hw.optional.arm64 and the hw.optional.arm.FEAT_* keys. They saw the Linux host's x86_64:
+ * Core ML compiled models "for platform intel" (E5), whose BNNS path an arm64 runtime doesn't have, and Spotlight's
+ * query parser couldn't load its model in time (a nil token: Spotlight crashed on typing). The features are an M1's
+ * (the Mac mini these runtimes are compared with, Macmini9,1) limited to what the JIT executes (dynarmic + the
+ * fallback: LSE/LSE2, LRCPC, FP16, JSCVT, CRC32, AES/SHA1/SHA256/PMULL); the rest read 0, as on a CPU without them.
+ * Other processes keep the host's identity and get no hw.optional (Darling never had it).
+ */
+#ifndef VARIANT_DYLD
+extern bool darling_x86code_arm64;
+#define X86CODE_ARM64() (darling_x86code_arm64)
+#else
+#define X86CODE_ARM64() 0
+#endif
+#define X86CODE_CPU_TYPE_ARM64 0x0100000c
+#define X86CODE_CPU_SUBTYPE_ARM64E 2
+#define X86CODE_CPUFAMILY_ARM_FIRESTORM_ICESTORM 0x1b588bb3
+
+static sysctl_handler(handle_cpufamily);
+static sysctl_handler(handle_cpusubfamily);
+static sysctl_handler(handle_optional_one);
+static sysctl_handler(handle_optional_zero);
+
+// hw.optional.* (oids under _HW_OPTIONAL; an arm64 process only)
+static const struct known_sysctl sysctls_hw_optional_arm[] = {
+	{ .oid = 1, .type = CTLTYPE_INT, .exttype = "I", .name = "AdvSIMD", .handler = handle_optional_one },
+	{ .oid = 2, .type = CTLTYPE_INT, .exttype = "I", .name = "AdvSIMD_HPFPCvt", .handler = handle_optional_one },
+	{ .oid = 3, .type = CTLTYPE_INT, .exttype = "I", .name = "FEAT_FP16", .handler = handle_optional_one },
+	{ .oid = 4, .type = CTLTYPE_INT, .exttype = "I", .name = "FEAT_CRC32", .handler = handle_optional_one },
+	{ .oid = 5, .type = CTLTYPE_INT, .exttype = "I", .name = "FEAT_LSE", .handler = handle_optional_one },
+	{ .oid = 6, .type = CTLTYPE_INT, .exttype = "I", .name = "FEAT_LSE2", .handler = handle_optional_one },
+	{ .oid = 7, .type = CTLTYPE_INT, .exttype = "I", .name = "FEAT_LRCPC", .handler = handle_optional_one },
+	{ .oid = 8, .type = CTLTYPE_INT, .exttype = "I", .name = "FEAT_JSCVT", .handler = handle_optional_one },
+	{ .oid = 9, .type = CTLTYPE_INT, .exttype = "I", .name = "FEAT_AES", .handler = handle_optional_one },
+	{ .oid = 10, .type = CTLTYPE_INT, .exttype = "I", .name = "FEAT_PMULL", .handler = handle_optional_one },
+	{ .oid = 11, .type = CTLTYPE_INT, .exttype = "I", .name = "FEAT_SHA1", .handler = handle_optional_one },
+	{ .oid = 12, .type = CTLTYPE_INT, .exttype = "I", .name = "FEAT_SHA256", .handler = handle_optional_one },
+	{ .oid = 13, .type = CTLTYPE_INT, .exttype = "I", .name = "FP_SyncExceptions", .handler = handle_optional_zero },
+	{ .oid = 14, .type = CTLTYPE_INT, .exttype = "I", .name = "FEAT_DotProd", .handler = handle_optional_zero },
+	{ .oid = 15, .type = CTLTYPE_INT, .exttype = "I", .name = "FEAT_FHM", .handler = handle_optional_zero },
+	{ .oid = 16, .type = CTLTYPE_INT, .exttype = "I", .name = "FEAT_BF16", .handler = handle_optional_zero },
+	{ .oid = 17, .type = CTLTYPE_INT, .exttype = "I", .name = "FEAT_I8MM", .handler = handle_optional_zero },
+	{ .oid = 18, .type = CTLTYPE_INT, .exttype = "I", .name = "FEAT_SME", .handler = handle_optional_zero },
+	{ .oid = 19, .type = CTLTYPE_INT, .exttype = "I", .name = "FEAT_SME2", .handler = handle_optional_zero },
+	{ .oid = 20, .type = CTLTYPE_INT, .exttype = "I", .name = "FEAT_SHA3", .handler = handle_optional_zero },
+	{ .oid = 21, .type = CTLTYPE_INT, .exttype = "I", .name = "FEAT_SHA512", .handler = handle_optional_zero },
+	{ .oid = 22, .type = CTLTYPE_INT, .exttype = "I", .name = "FEAT_RDM", .handler = handle_optional_zero },
+	{ .oid = -1 }
+};
+static const struct known_sysctl sysctls_hw_optional[] = {
+	{ .oid = 1, .type = CTLTYPE_INT, .exttype = "I", .name = "arm64", .handler = handle_optional_one },
+	{ .oid = 2, .type = CTLTYPE_INT, .exttype = "I", .name = "floatingpoint", .handler = handle_optional_one },
+	{ .oid = 3, .type = CTLTYPE_INT, .exttype = "I", .name = "neon", .handler = handle_optional_one },
+	{ .oid = 4, .type = CTLTYPE_INT, .exttype = "I", .name = "neon_hpfp", .handler = handle_optional_one },
+	{ .oid = 5, .type = CTLTYPE_INT, .exttype = "I", .name = "neon_fp16", .handler = handle_optional_one },
+	{ .oid = 6, .type = CTLTYPE_INT, .exttype = "I", .name = "armv8_crc32", .handler = handle_optional_one },
+	{ .oid = 7, .type = CTLTYPE_INT, .exttype = "I", .name = "armv8_1_atomics", .handler = handle_optional_one },
+	{ .oid = 8, .type = CTLTYPE_INT, .exttype = "I", .name = "armv8_2_fhm", .handler = handle_optional_zero },
+	{ .oid = 9, .type = CTLTYPE_INT, .exttype = "I", .name = "armv8_2_sha3", .handler = handle_optional_zero },
+	{ .oid = 10, .type = CTLTYPE_INT, .exttype = "I", .name = "armv8_2_sha512", .handler = handle_optional_zero },
+	{ .oid = 11, .type = CTLTYPE_INT, .exttype = "I", .name = "armv8_3_compnum", .handler = handle_optional_zero },
+	{ .oid = 12, .type = CTLTYPE_INT, .exttype = "I", .name = "ucnormal_mem", .handler = handle_optional_one },
+	{ .oid = 13, .type = CTLTYPE_INT, .exttype = "I", .name = "amx_version", .handler = handle_optional_zero },
+	{ .oid = _HW_OPTIONAL_ARM, .type = CTLTYPE_NODE, .exttype = "", .name = "arm", .subctls = sysctls_hw_optional_arm },
+	{ .oid = -1 }
 };
 
 static sysctl_handler(handle_availcpu);
@@ -56,6 +129,9 @@ const struct known_sysctl sysctls_hw[] = {
 	{ .oid = _HW_64BITCAPABLE, .type = CTLTYPE_INT, .exttype = "", .name = "cpu64bit_capable", .handler = handle_cpu64bitcapable },
 	{ .oid = HW_MACHINE, .type = CTLTYPE_STRING, .exttype = "S", .name = "machine", .handler = handle_machine },
 	{ .oid = _HW_CPUFREQUENCY, .type = CTLTYPE_INT, .exttype = "", .name = "cpufrequency", .handler = handle_cpufrequency },
+	{ .oid = _HW_CPUFAMILY, .type = CTLTYPE_INT, .exttype = "I", .name = "cpufamily", .handler = handle_cpufamily },
+	{ .oid = _HW_CPUSUBFAMILY, .type = CTLTYPE_INT, .exttype = "I", .name = "cpusubfamily", .handler = handle_cpusubfamily },
+	{ .oid = _HW_OPTIONAL, .type = CTLTYPE_NODE, .exttype = "", .name = "optional", .subctls = sysctls_hw_optional },
 	{ .oid = -1 }
 };
 
@@ -151,14 +227,14 @@ sysctl_handler(handle_pagesize)
 sysctl_handler(handle_cputype)
 {
 	sysctl_handle_size(sizeof(int));
-	*((int*) old) = gethostinfo()->cpu_type;
+	*((int*) old) = X86CODE_ARM64() ? X86CODE_CPU_TYPE_ARM64 : gethostinfo()->cpu_type;
 	return 0;
 }
 
 sysctl_handler(handle_cpusubtype)
 {
 	sysctl_handle_size(sizeof(int));
-	*((int*) old) = gethostinfo()->cpu_subtype;
+	*((int*) old) = X86CODE_ARM64() ? X86CODE_CPU_SUBTYPE_ARM64E : gethostinfo()->cpu_subtype;
 	return 0;
 }
 
@@ -190,6 +266,42 @@ sysctl_handler(handle_cpu64bitcapable)
 
 sysctl_handler(handle_machine)
 {
-	copyout_string(need_uname()->machine, (char*) old, oldlen);
+	copyout_string(X86CODE_ARM64() ? "arm64" : need_uname()->machine, (char*) old, oldlen);
+	return 0;
+}
+
+sysctl_handler(handle_cpufamily)
+{
+	if (!X86CODE_ARM64())
+		return -ENOENT;
+	sysctl_handle_size(sizeof(int));
+	*((int*) old) = X86CODE_CPUFAMILY_ARM_FIRESTORM_ICESTORM;
+	return 0;
+}
+
+sysctl_handler(handle_cpusubfamily)
+{
+	if (!X86CODE_ARM64())
+		return -ENOENT;
+	sysctl_handle_size(sizeof(int));
+	*((int*) old) = 2; // CPUSUBFAMILY_ARM_HS (an M1's)
+	return 0;
+}
+
+sysctl_handler(handle_optional_one)
+{
+	if (!X86CODE_ARM64())
+		return -ENOENT;
+	sysctl_handle_size(sizeof(int));
+	*((int*) old) = 1;
+	return 0;
+}
+
+sysctl_handler(handle_optional_zero)
+{
+	if (!X86CODE_ARM64())
+		return -ENOENT;
+	sysctl_handle_size(sizeof(int));
+	*((int*) old) = 0;
 	return 0;
 }

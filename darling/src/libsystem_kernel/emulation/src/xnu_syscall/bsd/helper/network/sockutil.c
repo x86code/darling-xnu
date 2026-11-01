@@ -31,6 +31,17 @@ long linux_tcp_info(int fd, struct linux_tcp_info* info)
 	unsigned int len = sizeof(*info);
 	long ret = linux_getsockopt(fd, LINUX_SOL_TCP, LINUX_TCP_INFO, info, &len);
 
+	// x86Code (Speed 27): Linux's tcp_get_info() reads the state without the socket's lock, so a read that races
+	// connect() on another thread can see CLOSE with the SYN already counted (segs_out 1). That reads as a socket
+	// that was connected and is closed now (sostate.c: disconnected): libkqueue then kept a new socket's hang-up as
+	// EOF and Network.framework failed the connection "Network is down" (the first connection of mobileassetd,
+	// WebKit's Networking process ...). connect() sets SYN_SENT before it sends, so one more read is consistent.
+	if (ret == 0 && len >= sizeof(*info) && info->state == LINUX_TCP_CLOSE && (info->segs_out || info->segs_in))
+	{
+		len = sizeof(*info);
+		ret = linux_getsockopt(fd, LINUX_SOL_TCP, LINUX_TCP_INFO, info, &len);
+	}
+
 	// a kernel whose tcp_info is shorter than this one's (before 4.2)
 	if (ret == 0 && len < sizeof(*info))
 		return -LINUX_EINVAL;
