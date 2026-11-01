@@ -57,6 +57,7 @@
 #include <darling/emulation/xnu_syscall/bsd/impl/misc/syscall.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/misc/sysctl.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/misc/thread_selfid.h>
+#include <darling/emulation/xnu_syscall/bsd/impl/misc/thread_selfcounts.h> // x86Code
 #include <darling/emulation/xnu_syscall/bsd/impl/mman/madvise.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/mman/mman.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/mman/msync.h>
@@ -347,6 +348,7 @@ void* __bsd_syscall_table[600] = {
 	[195] = sys_setrlimit,
 	[196] = sys_getdirentries,
 	[197] = sys_mmap,
+	[186] = sys_thread_selfcounts, // x86Code: was __unknown_syscall (SB 110% idle spin)
 	[199] = sys_lseek,
 	[200] = sys_truncate,
 	[201] = sys_ftruncate,
