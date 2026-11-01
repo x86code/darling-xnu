@@ -510,6 +510,29 @@ struct xnu_attrlist* alist, void *attributeBuffer, __SIZE_TYPE__ bufferSize, uns
 	// x86Code: remember the path of IDs we hand out for fsgetpath
 	if (fullpath[0] && (common & (ATTR_CMN_FILEID | ATTR_CMN_OBJID) || cmnext & ATTR_CMNEXT_LINKID))
 		fsgetpath_remember((uint32_t) devid, fileid, fullpath);
+	// x86Code (Speed 27): and the parent's, when its ID goes out (ATTR_CMN_PARENTID / PAROBJID). NSFileManager's
+	// replaceItemAtURL (CoreServicesInternal's URLReplaceObject) resolves the item's parent directory by that ID; it
+	// was unknown, so every atomic replace failed "file doesn't exist": lsd never saved its rebuilt database and
+	// rebuilt it at every boot (45 s of the boot to home).
+	if (fullpath[0] == '/' && fullpath[1] && parentid && parentid != fileid && (common & (ATTR_CMN_PARENTID | ATTR_CMN_PAROBJID)))
+	{
+		char ppath[GETATTR_PATH_MAX];
+		__SIZE_TYPE__ plen = __simple_strlen(fullpath);
+		if (plen < sizeof(ppath))
+		{
+			for (__SIZE_TYPE__ k = 0; k <= plen; k++)
+				ppath[k] = fullpath[k];
+			while (plen > 1 && ppath[plen - 1] == '/')
+				ppath[--plen] = 0;
+			char* slash = strrchr(ppath, '/');
+			if (slash == ppath)
+				slash[1] = 0;
+			else if (slash)
+				*slash = 0;
+			if (slash)
+				fsgetpath_remember((uint32_t) devid, parentid, ppath);
+		}
+	}
 
 	if (common & ATTR_CMN_RETURNED_ATTRS)
 		getattr_put(&p, returned, sizeof(returned));
