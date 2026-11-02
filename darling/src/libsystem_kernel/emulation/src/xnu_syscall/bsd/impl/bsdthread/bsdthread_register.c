@@ -51,6 +51,17 @@ long sys_bsdthread_register(void* thread_start, void* wqthread, int pthsize,
 	wqueue_entry_point = (bsdwqthread_entry_t) wqthread;
 	g_pth_regdata = *pth_regdata;
 
+	// x86Code: as XNU's bsdthread_register: the kernel copies the main thread's QoS out into the registration data
+	// (the thread's requested QoS, THREAD_QOS_LEGACY = QOS_CLASS_DEFAULT when none was requested), and libpthread
+	// keeps it as qos_class_main(). Darling left it 0 (QOS_CLASS_UNSPECIFIED), so +[BSServiceQuality main]
+	// (BoardServices) hit its "invalid QoS class" assertion: mobiletimerd (AlarmKit) trapped at every start and apps'
+	// AlarmManager.requestAuthorization() never answered. Encoding: _pthread_priority_make_from_thread_qos(4, 0, 0).
+	if (pth_regdata_len >= __builtin_offsetof(struct _pthread_registration_data, main_qos) + sizeof(uint64_t)) {
+		const uint64_t legacy_qos_pp = (1ull << (8 + 4 - 1)) | 0xff;
+		((struct _pthread_registration_data*)pth_regdata)->main_qos = legacy_qos_pp;
+		g_pth_regdata.main_qos = legacy_qos_pp;
+	}
+
 	uintptr_t pthread_handle = _pthread_getspecific_direct(_PTHREAD_TSD_SLOT_PTHREAD_SELF);
 	uintptr_t dispatch_qaddr = pthread_handle + g_pth_regdata.tsd_offset + g_pth_regdata.dispatch_queue_offset;
 	if (dserver_rpc_set_thread_handles(pthread_handle, dispatch_qaddr) < 0) {
