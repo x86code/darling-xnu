@@ -11,6 +11,7 @@
 #define MADV_FREE 5
 #define MADV_FREE_REUSABLE 7
 #define MADV_FREE_REUSE 8
+#define MADV_ZERO 11
 
 // Linux's page on x86_64
 #define LINUX_PAGE_SIZE 4096UL
@@ -19,6 +20,13 @@
 long sys_madvise(void* addr, unsigned long len, int advice)
 {
 	int ret;
+
+	// XNU's MADV_ZERO (macOS 15 / iOS 18) zero-fills the range, or fails with ENOTSUP where it can't, and callers
+	// (libpas' zero fill, libmalloc) then zero it themselves. Returning 0 below without zeroing left stale data in
+	// memory the caller treats as zeroed: WebCore's wrapper-map tables in Safari's WebContent came back with old
+	// pointers (DOMWrapperWorld::clearWrappers wrote to 0x80000008). ENOTSUP is always correct.
+	if (advice == MADV_ZERO)
+		return -ENOTSUP;
 
 	if (advice == MADV_FREE_REUSABLE || advice == MADV_FREE_REUSE)
 		advice = MADV_FREE;
