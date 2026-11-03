@@ -36,6 +36,7 @@
 #define LINUX_PR_SET_NAME 15
 
 static long _proc_pidinfo(int32_t pid, uint32_t flavor, uint64_t arg, void* buffer, int32_t bufsize);
+long x86code_dirtycontrol(int32_t pid, uint32_t flavor, uint64_t arg, void* buffer, int32_t bufsize); // x86Code
 
 extern __SIZE_TYPE__ strlen(const char *s);
 extern void *memset(void *s, int c, __SIZE_TYPE__ n);
@@ -160,8 +161,8 @@ long sys_proc_info(uint32_t callnum, int32_t pid, uint32_t flavor,
 			else
 				return 0; // PROC_SELFSET_PCONTROL (1)
 		}
-		case 8: // dirtycontrol
-			return 0;
+		case 8: // dirtycontrol (x86Code RAM 2: process/memorystatus.c records it for jetsam.py)
+			return x86code_dirtycontrol(pid, flavor, arg, buffer, bufsize);
 		case 2: // proc_pidinfo
 			return _proc_pidinfo(pid, flavor, arg, buffer, bufsize);
 		case 1: // proc_listpids (x86Code)

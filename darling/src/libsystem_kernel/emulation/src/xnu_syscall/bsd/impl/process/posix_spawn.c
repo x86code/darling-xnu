@@ -75,6 +75,8 @@ struct spawn_port_action
 	int which;
 };
 
+void x86code_jetsam_spawned(int priority); // x86Code: process/memorystatus.c
+
 struct spawn_port_actions
 {
 	int pspa_alloc;
@@ -191,6 +193,9 @@ long sys_posix_spawn(int* pid, const char* path, const struct _posix_spawn_args_
 no_fork:
 		if (desc && desc->attrp)
 		{
+			// x86Code (RAM 2): the jetsam band launchd gave the job (process/memorystatus.c, for jetsam.py)
+			if (desc->attrp->psa_jetsam_flags & XNU_POSIX_SPAWN_JETSAM_SET)
+				x86code_jetsam_spawned(desc->attrp->psa_priority);
 			if (desc->attrp->psa_flags & POSIX_SPAWN_RESETIDS)
 			{
 				sys_setgid(sys_getgid());

@@ -61,10 +61,4 @@ long sys_kqueue_workloop_ctl(unsigned long cmd, uint64_t options, void* addr, un
 	return -EINVAL;
 }
 
-// x86Code: memorystatus_control (440), jetsam priorities/limits/process state. There is no
-// jetsam here: every command succeeds, and queries report nothing (0 bytes). Failing it
-// made the user containermanagerd crash at startup.
-long sys_memorystatus_control(uint32_t command, int32_t pid, uint32_t flags, void* buffer, unsigned long size)
-{
-	return 0;
-}
+// x86Code: memorystatus_control (440) is in process/memorystatus.c (RAM 2: band changes are recorded for jetsam.py).

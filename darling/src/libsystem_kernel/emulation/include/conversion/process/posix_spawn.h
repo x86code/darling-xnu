@@ -24,8 +24,18 @@ struct xnu__posix_spawnattr
 	int psa_binprefs[4];
 	int psa_pcontrol;
 	int psa_apptype;
+	// x86Code (RAM 2): through the jetsam fields, as [xnu]/bsd/sys/spawn_internal.h (process/memorystatus.c)
+	uint64_t psa_cpumonitor_percent;
+	uint64_t psa_cpumonitor_interval;
+	uint64_t psa_reserved;
+	short psa_jetsam_flags;
+	short short_padding;
+	int psa_priority;
+	int psa_memlimit_active;
+	int psa_memlimit_inactive;
 	/* more fields that we don't support anyway */
 };
+#define XNU_POSIX_SPAWN_JETSAM_SET 0x8000
 typedef struct xnu__posix_spawnattr* xnu_posix_spawnattr_t;
 
 struct xnu__psfa_action
