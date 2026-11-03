@@ -111,11 +111,102 @@ void statfs_mac_fstypename(char* name, __SIZE_TYPE__ size)
 	}
 }
 
+// x86Code: btrfs subvolumes (and other st_dev changes) that are not mount points. A subvolume reached
+// through its parent ("/srv/projects" under the "/" mount) has its own st_dev but no /proc/self/mounts
+// line, so its files' fsid {st_dev,0} (stat, getattrlist ATTR_CMN_FSID) matched no getfsstat entry:
+// CFURL's NSURLVolumeURLKey failed and lsd registered no apps (-43, as in FINDINGS "lsd registration
+// -43"). Such a subvolume is reported as a volume of its own, mounted on its root: the topmost directory
+// with the file's st_dev. statfs/fstatfs return it and getfsstat lists it (the prefix's subvolume, and
+// every one statfs/fstatfs found in this process).
+int statfs_subvol_root(const char* linux_path, unsigned long long dev, char* out, unsigned long outsize)
+{
+	char cur[1024];
+	int len;
+
+	if (strlcpy(cur, linux_path, sizeof(cur)) >= sizeof(cur) || cur[0] != '/')
+		return -1;
+	len = strlen(cur);
+	while (len > 1 && cur[len - 1] == '/')
+		cur[--len] = 0;
+
+	while (len > 1)
+	{
+		struct linux_stat pst;
+		char saved;
+		int plen = len;
+
+		while (plen > 0 && cur[plen - 1] != '/')
+			plen--;
+		if (plen > 1)
+			plen--; // drop the '/' unless the parent is "/"
+		saved = cur[plen];
+		cur[plen] = 0;
+		if (LINUX_SYSCALL(__NR_stat, cur, &pst) != 0 || pst.st_dev != dev)
+		{
+			cur[plen] = saved;
+			break;
+		}
+		len = plen;
+	}
+	strlcpy(out, cur, outsize);
+	return 0;
+}
+
+#define STATFS_MAX_SUBVOLS 16
+static char subvol_roots[STATFS_MAX_SUBVOLS][1024];
+static unsigned long long subvol_devs[STATFS_MAX_SUBVOLS];
+static int subvol_count; // entries [0, subvol_count) are complete
+
+static void statfs_remember_subvol(const char* root, unsigned long long dev)
+{
+	int n = __atomic_load_n(&subvol_count, __ATOMIC_ACQUIRE);
+	for (int i = 0; i < n; i++)
+		if (subvol_devs[i] == dev)
+			return;
+	// Racing threads may both add the same root; getfsstat drops duplicate devs.
+	n = __atomic_load_n(&subvol_count, __ATOMIC_ACQUIRE);
+	if (n >= STATFS_MAX_SUBVOLS)
+		return;
+	strlcpy(subvol_roots[n], root, sizeof(subvol_roots[n]));
+	subvol_devs[n] = dev;
+	__atomic_compare_exchange_n(&subvol_count, &n, n + 1, 0, __ATOMIC_RELEASE, __ATOMIC_RELAXED);
+}
+
+// Index 0: the subvolume of the prefix root (the guest's "/"), always looked up, so a fresh process
+// lists it without a statfs first. Then those statfs/fstatfs met. Returns -1 past the end.
+int statfs_extra_root(int i, char* out, unsigned long outsize, unsigned long long* dev)
+{
+	if (i == 0)
+	{
+		struct vchroot_expand_args vc;
+		struct linux_stat st;
+		vc.flags = VCHROOT_FOLLOW;
+		vc.dfd = get_perthread_wd();
+		strcpy(vc.path, "/");
+		if (vchroot_expand(&vc) < 0 || LINUX_SYSCALL(__NR_stat, vc.path, &st) != 0
+			|| statfs_subvol_root(vc.path, st.st_dev, out, outsize) != 0)
+		{
+			out[0] = 0;
+			*dev = 0;
+		}
+		else
+			*dev = st.st_dev;
+		return 0;
+	}
+	i--;
+	if (i >= __atomic_load_n(&subvol_count, __ATOMIC_ACQUIRE))
+		return -1;
+	strlcpy(out, subvol_roots[i], outsize);
+	*dev = subvol_devs[i];
+	return 0;
+}
+
 // Fills mount point, fs type and source of the mount holding linux_path (a Linux path).
-void statfs_fill_mount_info(const char* linux_path, struct bsd_statfs64* buf)
+void statfs_fill_mount_info(const char* linux_path, unsigned long long dev, struct bsd_statfs64* buf)
 {
 	struct simple_readline_buf rbuf;
 	char line[1024];
+	char best[1024];
 	int max_len = -1;
 	int fd;
 
@@ -153,6 +244,7 @@ void statfs_fill_mount_info(const char* linux_path, struct bsd_statfs64* buf)
 			continue;
 
 		max_len = len;
+		strlcpy(best, mnton, sizeof(best));
 		statfs_mount_path_to_darling(mnton, buf->f_mntonname, sizeof(buf->f_mntonname));
 		strlcpy(buf->f_fstypename, fstype, sizeof(buf->f_fstypename));
 		statfs_mac_fstypename(buf->f_fstypename, sizeof(buf->f_fstypename)); // x86Code
@@ -161,6 +253,19 @@ void statfs_fill_mount_info(const char* linux_path, struct bsd_statfs64* buf)
 	}
 
 	close_internal(fd);
+
+	// x86Code: linux_path is on a file system the mount point is not (unmounted btrfs subvolume).
+	if (dev != 0 && max_len >= 0)
+	{
+		struct linux_stat mst;
+		char root[1024];
+		if (LINUX_SYSCALL(__NR_stat, best, &mst) == 0 && mst.st_dev != dev
+			&& statfs_subvol_root(linux_path, dev, root, sizeof(root)) == 0)
+		{
+			statfs_remember_subvol(root, dev);
+			statfs_mount_path_to_darling(root, buf->f_mntonname, sizeof(buf->f_mntonname));
+		}
+	}
 }
 
 long sys_statfs64(const char* path, struct bsd_statfs64* buf)
@@ -194,7 +299,9 @@ long sys_statfs64(const char* path, struct bsd_statfs64* buf)
 	// getattrlist (callers compare them, and pass the fsid to fsgetpath/openbyid_np).
 	if (LINUX_SYSCALL(__NR_stat, vc.path, &lst) == 0)
 		buf->f_fsid = (unsigned int) lst.st_dev;
+	else
+		lst.st_dev = 0;
 
-	statfs_fill_mount_info(vc.path, buf);
+	statfs_fill_mount_info(vc.path, lst.st_dev, buf);
 	return 0;
 }

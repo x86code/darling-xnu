@@ -25,6 +25,34 @@ long sys_getfsstat(struct bsd_statfs* buf, int bufsize, int flags)
 #endif
 }
 
+// x86Code: whether some /proc/self/mounts mount point has st_dev dev.
+static int getfsstat_dev_is_mount(unsigned long long dev)
+{
+	struct simple_readline_buf rbuf;
+	char line[1024];
+	int found = 0;
+	int fd = sys_open("/proc/self/mounts", O_RDONLY, 0);
+	if (fd < 0)
+		return 0;
+	__simple_readline_init(&rbuf);
+	while (__simple_readline(fd, &rbuf, line, sizeof(line)))
+	{
+		char* saveptr;
+		char* mnton = strtok_r(line, " ", &saveptr) ? strtok_r(NULL, " ", &saveptr) : NULL;
+		struct linux_stat st;
+		if (mnton == NULL)
+			continue;
+		statfs_unescape_mount_path(mnton);
+		if (LINUX_SYSCALL(__NR_stat, mnton, &st) == 0 && st.st_dev == dev)
+		{
+			found = 1;
+			break;
+		}
+	}
+	close_internal(fd);
+	return found;
+}
+
 long sys_getfsstat64(struct bsd_statfs64* buf, int bufsize, int flags)
 {
 	int fd;
@@ -97,5 +125,47 @@ long sys_getfsstat64(struct bsd_statfs64* buf, int bufsize, int flags)
 	}
 
 	close_internal(fd);
+
+	// x86Code: then the unmounted subvolumes (statfs.c, statfs_subvol_root) the guest uses, so a
+	// file's fsid {st_dev,0} there matches an entry, with the f_mntonname statfs returns for it.
+	{
+		unsigned long long seen[17];
+		int nseen = 0;
+		char root[1024];
+		unsigned long long dev;
+
+		for (int i = 0; statfs_extra_root(i, root, sizeof(root), &dev) == 0; i++)
+		{
+			struct linux_statfs64 lbuf;
+			int dup = 0;
+
+			if (dev == 0)
+				continue;
+			for (int j = 0; j < nseen; j++)
+				dup |= seen[j] == dev;
+			if (dup || getfsstat_dev_is_mount(dev))
+				continue;
+			if (nseen < (int)(sizeof(seen) / sizeof(seen[0])))
+				seen[nseen++] = dev;
+
+			if (buf != NULL)
+			{
+				if (bufsize < sizeof(struct bsd_statfs64) * (count+1))
+					break;
+#ifdef __NR_statfs64
+				if (LINUX_SYSCALL2(__NR_statfs64, root, &lbuf) < 0)
+#else
+				if (LINUX_SYSCALL2(__NR_statfs, root, &lbuf) < 0)
+#endif
+					continue;
+				statfs_linux_to_bsd64(&lbuf, &buf[count]);
+				// Source and type of the mount it is reached through; dev 0: no subvolume lookup.
+				statfs_fill_mount_info(root, 0, &buf[count]);
+				buf[count].f_fsid = (unsigned int) dev;
+				statfs_mount_path_to_darling(root, buf[count].f_mntonname, sizeof(buf[count].f_mntonname));
+			}
+			count++;
+		}
+	}
 	return count;
 }

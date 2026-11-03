@@ -53,6 +53,8 @@ long sys_fstatfs64(int fd, struct bsd_statfs64* buf)
 	// x86Code: f_fsid = { st_dev, 0 } as in statfs (matches getattrlist's ATTR_CMN_FSID).
 	if (LINUX_SYSCALL(__NR_fstat, fd, &lst) == 0)
 		buf->f_fsid = (unsigned int) lst.st_dev;
+	else
+		lst.st_dev = 0;
 
 	// x86Code: match the mount table against the Linux path of the fd (fdpath() returns the
 	// prefix view, which never matched mounts outside the prefix), then report the mount
@@ -69,7 +71,7 @@ long sys_fstatfs64(int fd, struct bsd_statfs64* buf)
 		path[ret] = 0;
 
 	if (path[0] == '/')
-		statfs_fill_mount_info(path, buf);
+		statfs_fill_mount_info(path, lst.st_dev, buf);
 	else
 	{
 		buf->f_mntonname[0] = 0;
