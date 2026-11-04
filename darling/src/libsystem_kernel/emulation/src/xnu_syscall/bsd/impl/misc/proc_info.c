@@ -24,6 +24,9 @@
 #include <darling/emulation/xnu_syscall/bsd/impl/unistd/getuid.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/unistd/getgid.h>
 #include <darling/emulation/common/simple.h>
+#include <darling/emulation/xnu_syscall/bsd/impl/signal/kill.h>
+#include <darling/emulation/xnu_syscall/bsd/impl/unistd/getpid.h>
+#include <sys/signal.h>
 #include <darling/emulation/xnu_syscall/bsd/helper/misc/readline.h>
 #include <darling/emulation/linux_premigration/elfcalls_wrapper.h>
 #include <darling/emulation/linux_premigration/vchroot_expand.h>
@@ -167,6 +170,24 @@ long sys_proc_info(uint32_t callnum, int32_t pid, uint32_t flavor,
 			return _proc_pidinfo(pid, flavor, arg, buffer, bufsize);
 		case 1: // proc_listpids (x86Code)
 			return _proc_listpids((uint32_t)pid, flavor, buffer, bufsize);
+		case 7: // PROC_INFO_CALL_TERMINATE: proc_terminate (x86Code RAM 7)
+		{
+			// launchd_sim tears down a dead client's process-scoped XPC services (ServiceType Application) and stops
+			// jobs with proc_terminate(). Unsupported, every such service outlived its client for good ("could not
+			// terminate service: 45", "Abandoning PID"). XNU sends SIGKILL to a clean dirty-tracked process (memorystatus)
+			// and SIGTERM otherwise, and returns the signal; launchd escalates to SIGKILL itself after its timeout.
+			if (pid <= 0 || pid == (int)sys_getpid())
+				return -EPERM;
+			int sig = SIGTERM;
+			uint32_t st = 0;
+			if (x86code_dirtycontrol(pid, 3 /* PROC_DIRTYCONTROL_GET */, 0, &st, sizeof st) >= 0
+					&& (st & 1 /* TRACKED */) && !(st & 4 /* IS_DIRTY */))
+				sig = SIGKILL;
+			long r = sys_kill(pid, sig, 1);
+			if (r < 0)
+				return r;
+			return sig;
+		}
 		case 3: // proc_pidfdinfo
 		default:
 			__simple_printf("sys_proc_info(): Unsupported callnum: %d\n",
