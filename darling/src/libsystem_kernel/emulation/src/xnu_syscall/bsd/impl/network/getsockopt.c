@@ -151,9 +151,12 @@ long sys_getsockopt(int fd, int level, int optname, void* optval, int* optlen)
 				if (err && SOCKET_ERROR_OPT_HOOKED(*err))
 					*err = socket_error_take(fd, *err);
 			}
-			else if (optname == BSD_SO_RCVTIMEO)
+			else if ((optname == BSD_SO_RCVTIMEO || optname == BSD_SO_SNDTIMEO)
+					&& optval && optlen && *optlen >= (int)sizeof(struct linux_timeval))
 			{
-				// This only makes a difference on big-endian (PPC)
+				// Linux returns a timeval with a long tv_usec; Darwin's is
+				// 32 bits followed by padding. The layouts only differ on
+				// big-endian (PPC), but convert both timeouts the same way.
 				struct linux_timeval ltv = *((struct linux_timeval*) optval);
 				struct bsd_timeval* btv = (struct bsd_timeval*) optval;
 				btv->tv_sec = ltv.tv_sec;
