@@ -227,6 +227,10 @@
 long sys___mac_syscall(const char* policy, int call, void* arg); // x86Code
 long sys_persona(uint32_t operation, uint32_t flags, void* info, void* id, void* idlen, char* path); // x86Code
 long sys_memorystatus_control(uint32_t command, int32_t pid, uint32_t flags, void* buffer, unsigned long size); // x86Code
+long sys_x86code_quotactl(void); // x86Code Align 1 (process/memorystatus.c)
+long sys_x86code_proc_rlimit_control(int pid, int flavor, void* arg); // x86Code Align 1
+long sys_x86code_telemetry(void); // x86Code Align 1
+uint64_t sys_x86code_thread_selfusage(void); // x86Code Align 1
 long sys_kqueue_workloop_ctl(unsigned long cmd, uint64_t options, void* addr, unsigned long sz); // x86Code
 long sys_proc_info_extended_id(int32_t callnum, int32_t pid, uint32_t flavor, uint32_t flags, uint64_t ext_id, uint64_t arg, void* buffer, int32_t buffersize); // x86Code
 
@@ -331,6 +335,7 @@ void* __bsd_syscall_table[600] = {
 	[157] = sys_statfs,
 	[158] = sys_fstatfs,
 	[159] = sys_unmount,
+	[165] = sys_x86code_quotactl, // x86Code Align 1
 	[169] = sys_csops,
 	[170] = sys_csops_audittoken,
 	[173] = sys_waitid,
@@ -491,9 +496,11 @@ void* __bsd_syscall_table[600] = {
 	[442] = sys_guarded_close_np,
 	[443] = sys_guarded_kqueue_np,
 	[444] = sys_change_fdguard_np, // x86Code
+	[446] = sys_x86code_proc_rlimit_control, // x86Code Align 1
 	[447] = sys_connectx, // x86Code: Network.framework (iOS 27) connects with it
 	[448] = sys_disconnectx, // x86Code
 	[450] = sys_socket_delegate, // x86Code: Network.framework's flow sockets
+	[451] = sys_x86code_telemetry, // x86Code Align 1
 	[461] = sys_getattrlistbulk,
 	[462] = sys_clonefileat,
 	[463] = sys_openat,
@@ -511,6 +518,7 @@ void* __bsd_syscall_table[600] = {
 	[475] = sys_mkdirat,
 	[476] = sys_getattrlistat,
 	[478] = sys_bsdthread_ctl,
+	[482] = sys_x86code_thread_selfusage, // x86Code Align 1
 	[483] = sys_csrctl,
 	[484] = sys_guarded_open_dprotected_np, // x86Code
 	[485] = sys_guarded_write_np, // x86Code

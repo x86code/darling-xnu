@@ -130,6 +130,76 @@ done:
 	return count * sizeof(int);
 }
 
+// x86Code (Align 1): proc_pid_rusage(pid, flavor, buffer) = proc_info(PROC_INFO_CALL_PIDRUSAGE). It was ENOTSUP;
+// launchd_sim (job accounting at exit), securityd and mobileassetd ask at boot. XNU (bsd/kern/proc_info.c
+// proc_pid_rusage -> kern_resource.c proc_get_rusage) writes the whole rusage_info_v<flavor> (libproc passes no size)
+// and EINVAL for a flavor above RUSAGE_INFO_CURRENT. From /proc/<pid>/stat and status: CPU times (ns), pageins
+// (major faults), resident size, phys_footprint (RssAnon + RssShmem: the private and shared-anonymous memory a
+// device's footprint counts), lifetime max footprint (VmHWM), start time (ns since boot, Darling's mach time).
+static const unsigned short rusage_sizes[] = { 96, 144, 160, 232, 296, 304, 464 }; // v0..v6 (bsd/sys/resource.h)
+
+static uint64_t status_kb(const char* status, const char* key)
+{
+	const char* p = status;
+	int kl = __simple_strlen(key);
+	while (*p)
+	{
+		if (strncmp(p, key, kl) == 0)
+		{
+			p += kl;
+			while (*p == ' ' || *p == '\t' || *p == ':') p++;
+			return __simple_atoi(p, NULL);
+		}
+		while (*p && *p != '\n') p++;
+		if (*p) p++;
+	}
+	return 0;
+}
+
+static long x86code_pid_rusage(int32_t pid, uint32_t flavor, void* buffer)
+{
+	char path[64], stat[1024], status[4096];
+	char* statptr;
+	const char* elem;
+	if (flavor > 6)
+		return -EINVAL;
+	if (!buffer)
+		return -EFAULT;
+	if (pid <= 0)
+		pid = (int)sys_getpid();
+	__simple_sprintf(path, "/proc/%d/stat", pid);
+	if (!read_string(path, stat, sizeof(stat)))
+		return -ESRCH;
+	__simple_sprintf(path, "/proc/%d/status", pid);
+	if (!read_string(path, status, sizeof(status)))
+		status[0] = 0;
+	uint64_t ri[58];
+	memset(ri, 0, sizeof(ri));
+	statptr = stat;
+	skip_stat_elems(&statptr, 11); // skip until majflt
+	elem = next_stat_elem(&statptr); if (!elem) return -ESRCH;
+	uint64_t majflt = __simple_atoi(elem, NULL);
+	skip_stat_elems(&statptr, 1); // cmajflt
+	elem = next_stat_elem(&statptr); if (!elem) return -ESRCH;
+	uint64_t utime = __simple_atoi(elem, NULL);
+	elem = next_stat_elem(&statptr); if (!elem) return -ESRCH;
+	uint64_t stime = __simple_atoi(elem, NULL);
+	skip_stat_elems(&statptr, 6); // cutime cstime priority nice num_threads itrealvalue
+	elem = next_stat_elem(&statptr); if (!elem) return -ESRCH;
+	uint64_t start = __simple_atoi(elem, NULL);
+	// ri[0..1] = uuid; then the u64 fields in order (index = 2 + field number)
+	ri[2] = utime * 10000000ULL;                                    // ri_user_time
+	ri[3] = stime * 10000000ULL;                                    // ri_system_time
+	ri[6] = majflt;                                                 // ri_pageins
+	ri[8] = status_kb(status, "VmRSS") * 1024;                      // ri_resident_size
+	ri[9] = (status_kb(status, "RssAnon") + status_kb(status, "RssShmem")) * 1024; // ri_phys_footprint
+	ri[10] = start * 10000000ULL;                                   // ri_proc_start_abstime
+	if (flavor >= 4)
+		ri[2 + 28] = status_kb(status, "VmHWM") * 1024;             // ri_lifetime_max_phys_footprint
+	memcpy(buffer, ri, rusage_sizes[flavor]);
+	return 0;
+}
+
 long sys_proc_info(uint32_t callnum, int32_t pid, uint32_t flavor,
 		uint64_t arg, void* buffer, int32_t bufsize)
 {
@@ -188,10 +258,13 @@ long sys_proc_info(uint32_t callnum, int32_t pid, uint32_t flavor,
 				return r;
 			return sig;
 		}
+		case 9: // PROC_INFO_CALL_PIDRUSAGE: proc_pid_rusage (x86Code Align 1)
+			return x86code_pid_rusage(pid, flavor, buffer);
 		case 3: // proc_pidfdinfo
 		default:
 			__simple_printf("sys_proc_info(): Unsupported callnum: %d\n",
 					callnum);
+			x86code_unsupported("proc_info", callnum);
 			return -ENOTSUP;
 	}
 }
@@ -296,6 +369,7 @@ long _proc_pidinfo(int32_t pid, uint32_t flavor, uint64_t arg, void* buffer, int
 		{
 			__simple_printf("sys_proc_info(): Unsupported pidinfo flavor: %d\n",
 					flavor);
+			x86code_unsupported("proc_pidinfo", flavor);
 			return -ENOTSUP;
 		}
 	}
@@ -938,10 +1012,13 @@ static long _proc_pidinfo_taskinfo(int32_t pid, void* buffer, int32_t bufsize)
 	READELEM();
 	uint64_t rss = __simple_atoi(elem, NULL);
 
+	// x86Code (Align 1): XNU's proc_pidtaskinfo reports sizes in bytes and times in nanoseconds (bsd/kern/proc_info.c
+	// fill_taskprocinfo); /proc/<pid>/stat has rss in pages and times in clock ticks (USER_HZ 100): the resident
+	// size was 4096x too small, the CPU times 10^7x.
 	ti->pti_virtual_size = vsize;
-	ti->pti_resident_size = rss;
-	ti->pti_total_user = utime;
-	ti->pti_total_system = stime;
+	ti->pti_resident_size = rss * 4096;
+	ti->pti_total_user = utime * 10000000ULL;
+	ti->pti_total_system = stime * 10000000ULL;
 	// ti->pti_threads_user
 	// ti->pti_threads_system
 	// ti->pti_policy

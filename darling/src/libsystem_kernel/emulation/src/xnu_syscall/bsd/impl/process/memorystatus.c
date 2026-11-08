@@ -18,6 +18,7 @@
 // is in the background but not suspended, e.g. Maps, is told from the foreground one.)
 // jetsam.py applies the policy (which bands to reclaim, when). The directory is cleared at each boot (boot-a64.sh).
 #include <darling/emulation/common/base.h>
+#include <darling/emulation/linux_premigration/linux-syscalls/linux.h>
 #include <darling/emulation/common/simple.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/fcntl/openat.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/unistd/close.h>
@@ -120,6 +121,21 @@ void x86code_jetsam_spawned(int priority)
 // (failing it made the user containermanagerd crash at startup); a band change is recorded.
 long sys_memorystatus_control(uint32_t command, int32_t pid, uint32_t flags, void* buffer, unsigned long size)
 {
+	if (command != 2)
+		x86code_unsupported("memorystatus_control", command); // census: answered 0 / nothing
+	// Align 1: the simulator's kernel is macOS's, built without CONFIG_JETSAM: memorystatus_control
+	// (bsd/kern/kern_memorystatus.c) has no case for these there and fails them with EINVAL. RunningBoard asks
+	// CONVERT_MEMLIMIT_MB (28) for its processes' limits: the 0 we answered read as a 0 MB limit.
+	switch (command)
+	{
+		case 5:  // MEMORYSTATUS_CMD_SET_JETSAM_HIGH_WATER_MARK
+		case 6:  // MEMORYSTATUS_CMD_SET_JETSAM_TASK_LIMIT
+		case 25: // MEMORYSTATUS_CMD_MARK_PROCESS_COALITION_SWAPPABLE
+		case 26: // MEMORYSTATUS_CMD_GET_PROCESS_COALITION_IS_SWAPPABLE
+		case 28: // MEMORYSTATUS_CMD_CONVERT_MEMLIMIT_MB
+		case 36: // MEMORYSTATUS_CMD_REARM_MEMLIMIT
+			return -EINVAL;
+	}
 	if (command == 2 /* MEMORYSTATUS_CMD_SET_PRIORITY_PROPERTIES */ && pid > 0 && buffer != 0 && size >= 16)
 	{
 		struct { int32_t priority; uint64_t user_data; } const* pp = buffer;
@@ -212,4 +228,36 @@ void x86code_jetsam_darwin_role(int pid, int role)
 		st.role = role;
 		js_write(pid, &st);
 	}
+}
+
+// Align 1: syscalls the runtime makes that had no entry ("Unimplemented syscall", ENOSYS; census at boot).
+// quotactl (165, searchd): no volume here has quotas: ENOTSUP, as XNU's quotactl for a mount without them.
+long sys_x86code_quotactl(void)
+{
+	return -ENOTSUP;
+}
+
+// proc_rlimit_control (446, coreaudiod & co.): wakeup / CPU / footprint-interval monitors (bsd/kern/kern_resource.c).
+// Nothing monitors here: accepted (0), as XNU does for a valid flavor; an unknown flavor is EINVAL.
+long sys_x86code_proc_rlimit_control(int pid, int flavor, void* arg)
+{
+	if (flavor < 0 || flavor > 7)
+		return -EINVAL;
+	return 0;
+}
+
+// telemetry (451, runningboardd): no telemetry subsystem: ENOTSUP (XNU without CONFIG_TELEMETRY).
+long sys_x86code_telemetry(void)
+{
+	return -ENOTSUP;
+}
+
+// thread_selfusage (482, searchd): the calling thread's CPU time in mach time units (XNU thread_get_runtime_self);
+// Darling's mach time is nanoseconds (CLOCK_MONOTONIC), so CLOCK_THREAD_CPUTIME_ID (3) in ns.
+uint64_t sys_x86code_thread_selfusage(void)
+{
+	struct { long tv_sec; long tv_nsec; } ts;
+	if (LINUX_SYSCALL(__NR_clock_gettime, 3, &ts) < 0)
+		return 0;
+	return (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
 }

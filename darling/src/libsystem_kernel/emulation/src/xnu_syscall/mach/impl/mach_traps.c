@@ -13,10 +13,11 @@
 #include <darling/emulation/linux_premigration/ext/mremap.h>
 #include <darling/emulation/common/simple.h>
 #include <darling/emulation/conversion/duct_errno.h>
+#include <darling/emulation/conversion/mman/duct_mman.h>
 
 #include <darlingserver/rpc.h>
 
-#define UNIMPLEMENTED_TRAP() { char msg[] = "Called unimplemented Mach trap: "; write(2, msg, sizeof(msg)-1); write(2, __FUNCTION__, sizeof(__FUNCTION__)-1); write(2, "\n", 1); }
+#define UNIMPLEMENTED_TRAP() { char msg[] = "Called unimplemented Mach trap: "; write(2, msg, sizeof(msg)-1); write(2, __FUNCTION__, sizeof(__FUNCTION__)-1); write(2, "\n", 1); x86code_unsupported(__FUNCTION__, 0); }
 
 mach_port_name_t mach_reply_port_impl(void)
 {
@@ -304,18 +305,52 @@ kern_return_t _kernelrpc_mach_vm_purgable_control_trap_impl(
 
 	switch (control)
 	{
+		// Align 1: 2 is VM_PURGABLE_PURGE_ALL and 3 VM_PURGABLE_SET_STATE_FROM_KERNEL (osfmk/mach/vm_purgable.h); they
+		// were swapped. XNU's mach_vm_purgable_control (vm_user.c) refuses FROM_KERNEL from user space.
 		case 0: // VM_PURGABLE_SET_STATE
 		case 1: // VM_PURGABLE_GET_STATE
-		case 2: // VM_PURGABLE_SET_STATE_FROM_KERNEL
 			if (state == NULL)
 				return KERN_INVALID_ARGUMENT;
 			*state = 0; // VM_PURGABLE_NONVOLATILE
 			return KERN_SUCCESS;
-		case 3: // VM_PURGABLE_PURGE_ALL
+		case 2: // VM_PURGABLE_PURGE_ALL
 			return KERN_SUCCESS;
 		default:
 			return KERN_INVALID_ARGUMENT;
 	}
+}
+
+// x86Code (Align 1): set_maximum for _kernelrpc_mach_vm_protect_trap: each mapping of [start, end) (from
+// /proc/self/maps) gets its current protection & max. KERN_INVALID_ADDRESS if part of the range is unmapped (XNU).
+static kern_return_t x86code_protect_max(unsigned long start, unsigned long end, int max)
+{
+	struct simple_readline_buf rbuf;
+	char line[512];
+	unsigned long covered = start;
+	int fd = LINUX_SYSCALL(__NR_open, "/proc/self/maps", 0 /* O_RDONLY */);
+	if (fd < 0)
+		return KERN_SUCCESS; // can't look: leave it as is (never grant)
+	__simple_readline_init(&rbuf);
+	while (covered < end && __simple_readline(fd, &rbuf, line, sizeof(line)))
+	{
+		const char* p;
+		unsigned long lo = __simple_atoi16(line, &p);
+		unsigned long hi = __simple_atoi16(p + 1, &p);
+		p++;
+		if (hi <= covered)
+			continue;
+		if (lo >= end)
+			break;
+		if (lo > covered)
+			break; // hole
+		int cur = (p[0] == 'r' ? PROT_READ : 0) | (p[1] == 'w' ? PROT_WRITE : 0) | (p[2] == 'x' ? PROT_EXEC : 0);
+		unsigned long b = hi < end ? hi : end;
+		if ((cur & max) != cur)
+			mprotect((void*)covered, b - covered, cur & max);
+		covered = b;
+	}
+	LINUX_SYSCALL(__NR_close, fd);
+	return covered >= end ? KERN_SUCCESS : KERN_INVALID_ADDRESS;
 }
 
 kern_return_t _kernelrpc_mach_vm_protect_trap_impl(
@@ -339,11 +374,31 @@ kern_return_t _kernelrpc_mach_vm_protect_trap_impl(
 	if (new_protection & VM_PROT_EXECUTE)
 		prot |= PROT_EXEC;
 
-	ret = mprotect((void*)address, size, prot);
+	// x86Code (Align 1): XNU's vm_map_protect works on the whole pages the range touches and, with set_maximum, sets
+	// the maximum protection and lowers the current one to it (current &= new max): it never grants a right.
+	// set_maximum was ignored, so vm_protect(..., TRUE, VM_PROT_ALL) made read-only or guard pages writable.
+	// Linux has no maximum protection: each mapping in the range keeps (its protection & new_protection).
+	{
+		unsigned long start = (unsigned long)address & ~4095UL;
+		unsigned long end = ((unsigned long)address + size + 4095UL) & ~4095UL;
+		if (size == 0)
+			return KERN_SUCCESS;
+		if (end < start)
+			return KERN_INVALID_ARGUMENT;
+		if (set_maximum)
+			return x86code_protect_max(start, end, prot);
+		ret = mprotect((void*)start, end - start, prot);
+	}
 	if (ret == -1)
-		return KERN_FAILURE;
+		return KERN_INVALID_ADDRESS; // XNU: an unmapped page in the range
 
 	return KERN_SUCCESS;
+}
+
+static int prot_to_linux(int prot)
+{
+	// Linux PROT_* = BSD PROT_* for READ (1), WRITE (2), EXEC (4)
+	return prot & 7;
 }
 
 kern_return_t _kernelrpc_mach_vm_map_trap_impl(
@@ -370,16 +425,39 @@ kern_return_t _kernelrpc_mach_vm_map_trap_impl(
 	if (cur_protection & VM_PROT_EXECUTE)
 		prot |= PROT_EXEC;
 
-	if (!(flags & VM_FLAGS_ANYWHERE))
-		posix_flags |= MAP_FIXED;
-	if ((flags >> 24) == VM_MEMORY_REALLOC)
+	// x86Code (Align 1): XNU's vm_map_enter fails a fixed request without VM_FLAGS_OVERWRITE over anything already
+	// mapped (KERN_NO_SPACE); MAP_FIXED replaced whatever was there, so a fixed allocation that should have failed
+	// silently unmapped another allocation (libmalloc's xzone realloc-in-place asks for the segment after its own with
+	// VM_FLAGS_FIXED and relies on the failure). Now MAP_FIXED_NOREPLACE unless OVERWRITE, and the failures return
+	// KERN_NO_SPACE as XNU does (libmalloc's mvm_allocate_pages retries from the bottom on exactly that code).
+	if ((flags >> 24) == VM_MEMORY_REALLOC && !(flags & VM_FLAGS_ANYWHERE))
 		addr = (void*)__linux_mremap(((char*)*address) - 0x1000, 0x1000, 0x1000 + size, 0, NULL);
+	else if (!(flags & VM_FLAGS_ANYWHERE) && !(flags & VM_FLAGS_OVERWRITE))
+	{
+		long r = LINUX_SYSCALL6(__NR_mmap, *address, size, prot_to_linux(prot),
+			LINUX_MAP_PRIVATE | LINUX_MAP_ANONYMOUS | 0x100000 /* LINUX_MAP_FIXED_NOREPLACE */, -1, 0);
+		if (r == -LINUX_EEXIST || r == -LINUX_ENOMEM)
+			return KERN_NO_SPACE;
+		if ((unsigned long)r > (unsigned long)-4096)
+			return KERN_INVALID_ARGUMENT;
+		if (r != (long)*address)
+		{
+			// a kernel before 4.17 took the flag as a hint
+			LINUX_SYSCALL2(__NR_munmap, r, size);
+			return KERN_NO_SPACE;
+		}
+		addr = (void*)r;
+	}
 	else
+	{
+		if (!(flags & VM_FLAGS_ANYWHERE))
+			posix_flags |= MAP_FIXED;
 		addr = mmap((void*)*address, size, prot, posix_flags, -1, 0);
+	}
 	
 	if (addr == MAP_FAILED)
 	{
-		return KERN_FAILURE;
+		return KERN_NO_SPACE;
 	}
 	
 	if (mask && ( ((uintptr_t)addr) & mask) != 0)
