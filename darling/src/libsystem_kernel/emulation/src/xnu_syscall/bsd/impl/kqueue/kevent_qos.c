@@ -167,7 +167,7 @@ void kevent_64_to_qos(const struct kevent64_s* ev64, struct kevent_qos_s *ev)
  *   thread passes back with WQOPS_THREAD_KEVENT_RETURN (re-arming etc.) are
  *   applied before waiting again.
  *
- * Batches are delivered one at a time; XNU can run several in parallel.
+ * Batches run in parallel, as XNU runs them (x86Code, Input 3: see wq_deliver).
  */
 
 #define WQ_KEVENT_BATCH 16
@@ -342,33 +342,84 @@ static int wq_apply_changes(const struct kevent_qos_s* changelist, int nchanges,
 	return receipts == NULL && nr > 0 ? 0 : nr;
 }
 
-// Run one batch on a workqueue thread and apply the changes it hands back
-static void wq_deliver(struct kevent_qos_s* events, int n, int priority)
+// x86Code (Input 3): batches run asynchronously. The manager handed a batch to a workqueue thread and waited for it
+// to return before it looked at the kqueue again, so while one kevent thread's handler blocked, no other event of the
+// process was delivered. A handler that blocks on something only another event brings deadlocked the process: an
+// iPad SpringBoard's kevent thread waited in a dispatch_sync on a workloop whose servicer was rendering a killed
+// app's switcher snapshot, which waited in -[MTLSimCommandBuffer waitUntilCompleted] for metalhostd's "completed"
+// message; that message (and every later one: touches, launches, SBS calls) sat queued on its port, its kqchan
+// notification sent but never read. XNU requests a thread per batch and never waits for one. Now each batch gets
+// a slot and the changes come back on the returning thread (wq_batch_returned), as workloop batches do; knotes
+// stay quiet meanwhile as before (EV_DISPATCH / EV_ONESHOT / EV_CLEAR, the event manager runs one at a time:
+// wq_mgr_claim). With every slot in use the manager waits for one as it waited for each batch before.
+#define WQ_BATCH_SLOTS 48
+struct wq_batch_slot
 {
-	struct kevent_qos_s returned[WQ_KEVENT_RETURN_MAX];
-	int i;
+	struct wq_kevent_data data;
+	struct kevent_qos_s events[WQ_KEVENT_RETURN_MAX];
+	bool used;
+};
+static struct wq_batch_slot wq_batch_slots[WQ_BATCH_SLOTS];
+static libsimple_lock_t wq_batch_lock = LIBSIMPLE_LOCK_INITIALIZER;
+static int wq_batch_free_sem = WQ_BATCH_SLOTS;
 
-	int m = 0;
-	for (i = 0; i < n; i++)
-		if (wq_knote_live(&events[i])) // x86Code: deleted meanwhile (see wq_knote_live_locked)
-			returned[m++] = events[i];
-	n = m;
-	if (n == 0)
-		return;
-
-	struct wq_kevent_data wq_kevent = { .events = returned, .nevents = n, .sem = 0 };
-	sys_workq_kernreturn(WQOPS_QUEUE_REQTHREAD_FOR_KEVENT, &wq_kevent, 1, priority);
-	sem_down(&wq_kevent.sem, -1);
-
-	n = wq_kevent.nevents;
-	WQDBG("manager: thread (prio 0x%x) returned %d changes\n", priority, n);
+static void wq_batch_returned(struct wq_kevent_data* data)
+{
+	struct wq_batch_slot* slot = (struct wq_batch_slot*) ((char*) data - offsetof(struct wq_batch_slot, data));
+	int n = data->nevents;
+	WQDBG("kevent thread returned %d changes\n", n);
 	if (n > WQ_KEVENT_RETURN_MAX)
 	{
 		__simple_printf("kevent workq: %d returned changes, only %d applied\n", n, WQ_KEVENT_RETURN_MAX);
 		n = WQ_KEVENT_RETURN_MAX;
 	}
 	if (n > 0)
-		wq_apply_changes(returned, n, NULL, 0);
+		wq_apply_changes(slot->events, n, NULL, 0);
+	libsimple_lock_lock(&wq_batch_lock);
+	slot->used = false;
+	libsimple_lock_unlock(&wq_batch_lock);
+	sem_up(&wq_batch_free_sem);
+}
+
+// Hand one batch to a workqueue thread; its changes are applied when it returns
+static void wq_deliver(struct kevent_qos_s* events, int n, int priority)
+{
+	struct wq_batch_slot* slot = NULL;
+	int i, m = 0;
+
+	sem_down(&wq_batch_free_sem, -1);
+	libsimple_lock_lock(&wq_batch_lock);
+	for (i = 0; i < WQ_BATCH_SLOTS; i++)
+	{
+		if (!wq_batch_slots[i].used)
+		{
+			slot = &wq_batch_slots[i];
+			slot->used = true;
+			break;
+		}
+	}
+	libsimple_lock_unlock(&wq_batch_lock);
+
+	for (i = 0; i < n; i++)
+		if (wq_knote_live(&events[i])) // x86Code: deleted meanwhile (see wq_knote_live_locked)
+			slot->events[m++] = events[i];
+	if (m == 0)
+	{
+		libsimple_lock_lock(&wq_batch_lock);
+		slot->used = false;
+		libsimple_lock_unlock(&wq_batch_lock);
+		sem_up(&wq_batch_free_sem);
+		return;
+	}
+
+	slot->data = (struct wq_kevent_data) {
+		.events = slot->events,
+		.nevents = m,
+		.sem = 0,
+		.capacity = WQ_KEVENT_RETURN_MAX,
+		.returned = wq_batch_returned,
+	};
+	sys_workq_kernreturn(WQOPS_QUEUE_REQTHREAD_FOR_KEVENT, &slot->data, 1, priority);
 }
 
 extern void sigexc_setup2(void);
