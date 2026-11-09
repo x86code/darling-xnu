@@ -365,6 +365,9 @@ long _proc_pidinfo(int32_t pid, uint32_t flavor, uint64_t arg, void* buffer, int
 			*(uint32_t*) buffer = platform;
 			return sizeof(uint32_t);
 		}
+		case 25: // PROC_PIDEXITREASONBASICINFO (x86Code): no exit reasons are recorded. launchd_sim asks for every exited
+			// job and takes ENOENT as "none"; ENOTSUP made it assert at each exit ("launchd_sim + 186420 ... 0x2d").
+			return -ENOENT;
 		default:
 		{
 			__simple_printf("sys_proc_info(): Unsupported pidinfo flavor: %d\n",

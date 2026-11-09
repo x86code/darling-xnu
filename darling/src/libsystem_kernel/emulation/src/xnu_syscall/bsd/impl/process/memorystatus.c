@@ -185,10 +185,12 @@ long x86code_dirtycontrol(int32_t pid, uint32_t flavor, uint64_t arg, void* buff
 			}
 			break;
 		case DC_GET:
-			if (buffer == 0 || bufsize < 4)
-				return -EINVAL;
-			*(uint32_t*)buffer = (uint32_t)st.dirty;
-			return 0;
+			// XNU returns the flags as the call's value: libproc's proc_get_dirty passes no buffer and reads the
+			// return value. Requiring one failed every proc_get_dirty() with EINVAL (launchd_sim asserted at each
+			// job's spawn and exit: "launchd_sim + 186336 ... 0x16"). A buffer, when given, still gets them.
+			if (buffer != 0 && bufsize >= 4)
+				*(uint32_t*)buffer = (uint32_t)st.dirty;
+			return (long)(uint32_t)st.dirty;
 		case DC_CLEAR:
 			st.dirty &= ~(long)(arg & (PD_TRACKED | PD_ALLOWS_IDLE_EXIT | PD_IS_DIRTY));
 			break;
