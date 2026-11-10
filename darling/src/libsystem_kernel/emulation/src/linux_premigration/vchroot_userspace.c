@@ -169,7 +169,7 @@ static void init_vchroot_path(void)
 }
 
 #ifndef TEST
-// x86Code: fast path. The walk below lstat()s every component of every path (installd's post-boot scan: ~21,000
+// x86Sim: fast path. The walk below lstat()s every component of every path (installd's post-boot scan: ~21,000
 // lstat/s; every dyld load, every open/stat of an app). openat2() resolves the whole path in the kernel with the same
 // meaning: RESOLVE_IN_ROOT on a descriptor of the prefix makes absolute symlinks resolve inside the prefix, as the walk
 // does. Paths into the real root (/Volumes/SystemRoot/...) are resolved with RESOLVE_NO_SYMLINKS (the walk resolves an
@@ -279,7 +279,7 @@ static int vch_resolve(const char* path, bool in_prefix, bool follow, char* out,
 	return rv;
 }
 
-// x86Code: "/proc/<pid>/<file>" for a few plain files of the prefix's procfs. The walk lstat()s /proc, /proc/<pid>
+// x86Sim: "/proc/<pid>/<file>" for a few plain files of the prefix's procfs. The walk lstat()s /proc, /proc/<pid>
 // and the file for each: launchd_sim reads /proc/<pid>/stat and cmdline of the requestor for every lookup it logs
 // (~2,000 lstat a second while an app launches). None of them is a symlink (unlike /proc/self, exe, cwd, root, fd/),
 // so the walk's result is the prefix followed by the path; a pid that doesn't exist fails in the caller's syscall.
@@ -427,7 +427,7 @@ int vchroot_expand(struct vchroot_expand_args* args)
 
 	const char* input_path = args->path;
 
-	// x86Code: "/.nofollow/<path>" (Darwin 23+) is <path> resolved without following symlinks (O_NOFOLLOW_ANY).
+	// x86Sim: "/.nofollow/<path>" (Darwin 23+) is <path> resolved without following symlinks (O_NOFOLLOW_ANY).
 	// iOS 27's Foundation builds such paths (NSFileManager moves, nsurlsessiond's download hand-off, mobileassetd);
 	// taken literally they landed in <prefix>/.nofollow/..., a tree nothing else sees (Siri/Spotlight assets never
 	// reached mobileassetd's staging). Strip the prefix; the last component isn't followed.
@@ -485,7 +485,7 @@ int vchroot_expand(struct vchroot_expand_args* args)
 
 	int rv;
 #ifndef TEST
-	if (!vchroot_fast(&ctxt, input_path, &rv)) // x86Code
+	if (!vchroot_fast(&ctxt, input_path, &rv)) // x86Sim
 #endif
 		rv = vchroot_run(input_path, &ctxt);
 	if (ctxt.current_path_len > 0)

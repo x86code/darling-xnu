@@ -13,7 +13,7 @@
 #include <darling/emulation/xnu_syscall/bsd/impl/stat/lstat.h>
 #include <darling/emulation/conversion/stat/common.h>
 
-// x86Code: XNU resolves (fsid, object ID) to a path in the file system. Linux cannot look up an
+// x86Sim: XNU resolves (fsid, object ID) to a path in the file system. Linux cannot look up an
 // inode by number, so we answer for the IDs this process has seen through getattrlist
 // (ATTR_CMN_FILEID/OBJID, CMNEXT_LINKID), which is what CoreServicesInternal resolves (file
 // reference URLs, FSNode). Unknown IDs fail with ENOENT as for a deleted file.
@@ -45,11 +45,11 @@ static unsigned int fsgp_slot(unsigned int dev, unsigned long long ino)
 	return (unsigned int) (h >> 56) % FSGP_SLOTS;
 }
 
-// x86Code: a table shared by every process of the prefix, so an ID one process handed out resolves in another.
+// x86Sim: a table shared by every process of the prefix, so an ID one process handed out resolves in another.
 // A bookmark that Safari makes for WebKit's cache directory is resolved in the GPU process; with only the
 // per-process cache that failed, CoreServicesInternal took the directory for an iCloud document that isn't
 // downloaded (its parent is reachable) and waited in DownloadCloudDocumentSync for ever (Safari then killed
-// the GPU process, over and over). /private/var/db/x86code-fileids, 16384 slots of 512 bytes, last writer wins;
+// the GPU process, over and over). /private/var/db/x86sim-fileids, 16384 slots of 512 bytes, last writer wins;
 // a hit is used only if the path still has that ID.
 #define FSGP_SH_SLOTS 16384
 #define FSGP_SH_PATH 496
@@ -68,7 +68,7 @@ static struct fsgp_shared* fsgp_shared_table(void)
 	int st = __atomic_load_n(&fsgp_sh_state, __ATOMIC_ACQUIRE);
 	if (st)
 		return st > 0 ? fsgp_sh : NULL;
-	int fd = sys_open("/private/var/db/x86code-fileids", 0x0002 /* O_RDWR */ | 0x0200 /* O_CREAT */ | 0x01000000 /* O_CLOEXEC */, 0666);
+	int fd = sys_open("/private/var/db/x86sim-fileids", 0x0002 /* O_RDWR */ | 0x0200 /* O_CREAT */ | 0x01000000 /* O_CLOEXEC */, 0666);
 	void* m = (void*) -1;
 	if (fd >= 0)
 	{
@@ -183,7 +183,7 @@ long sys_fsgetpath(const char* buf, unsigned long size, void* fsid, unsigned lon
 	return rv;
 }
 
-// x86Code: object id 2 is the root directory of an APFS/HFS volume (revisiond opens a volume by (fsid, 2) for its
+// x86Sim: object id 2 is the root directory of an APFS/HFS volume (revisiond opens a volume by (fsid, 2) for its
 // document-id library; "Failed creating library for 58"). Linux roots have other inode numbers: the mount point
 // is found from any path of that device the table knows, walking up while the parent is on the same device.
 static long fsgetpath_volume_root(const char* buf, unsigned long size, unsigned int dev)
@@ -237,7 +237,7 @@ static long fsgetpath_volume_root(const char* buf, unsigned long size, unsigned 
 	return len + 1;
 }
 
-// x86Code: openbyid_np (BSD 479) was missing (ENOSYS). APFS opens a file by its object id or by its document id;
+// x86Sim: openbyid_np (BSD 479) was missing (ENOSYS). APFS opens a file by its object id or by its document id;
 // GenerationalStorage resolves a document id that way (GSLibraryResolveDocumentId2: openbyid_np, then checks the
 // document id of what it opened), and FileProviderResolver with it every "did=" item identifier: Preview could
 // not open a file handed over by Files ("Error resolving bookmark ... did=... -1005"). Resolved like fsgetpath,

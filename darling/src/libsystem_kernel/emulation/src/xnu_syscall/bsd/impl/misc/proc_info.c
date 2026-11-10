@@ -8,7 +8,7 @@
 #include <stdbool.h>
 #include <sys/proc.h>
 #include <stddef.h>
-#include <darling/emulation/conversion/dirent/getdirentries.h> // x86Code
+#include <darling/emulation/conversion/dirent/getdirentries.h> // x86Sim
 
 #include <darling/emulation/common/base.h>
 #include <darling/emulation/conversion/dirent/getdirentries.h>
@@ -39,7 +39,7 @@
 #define LINUX_PR_SET_NAME 15
 
 static long _proc_pidinfo(int32_t pid, uint32_t flavor, uint64_t arg, void* buffer, int32_t bufsize);
-long x86code_dirtycontrol(int32_t pid, uint32_t flavor, uint64_t arg, void* buffer, int32_t bufsize); // x86Code
+long x86sim_dirtycontrol(int32_t pid, uint32_t flavor, uint64_t arg, void* buffer, int32_t bufsize); // x86Sim
 
 extern __SIZE_TYPE__ strlen(const char *s);
 extern void *memset(void *s, int c, __SIZE_TYPE__ n);
@@ -49,7 +49,7 @@ extern char *strncpy(char *dest, const char *src, __SIZE_TYPE__ n);
 extern int strncmp (const char * str1, const char * str2, __SIZE_TYPE__ num);
 extern char *strchr(char *str, int character);
 
-// x86Code: proc_listpids/proc_listallpids (proc_info callnum 1): pids from /proc of the container's pid namespace.
+// x86Sim: proc_listpids/proc_listallpids (proc_info callnum 1): pids from /proc of the container's pid namespace.
 // type = PROC_ALL_PIDS/PGRP_ONLY/PPID_ONLY/UID_ONLY/RUID_ONLY/TTY_ONLY, typeinfo = the pgrp/ppid/uid.
 // Like XNU, returns the number of bytes written, or (buffer NULL) a size estimate.
 static long _proc_listpids(uint32_t type, uint32_t typeinfo, void* buffer, int32_t bufsize)
@@ -130,7 +130,7 @@ done:
 	return count * sizeof(int);
 }
 
-// x86Code (Align 1): proc_pid_rusage(pid, flavor, buffer) = proc_info(PROC_INFO_CALL_PIDRUSAGE). It was ENOTSUP;
+// x86Sim (Align 1): proc_pid_rusage(pid, flavor, buffer) = proc_info(PROC_INFO_CALL_PIDRUSAGE). It was ENOTSUP;
 // launchd_sim (job accounting at exit), securityd and mobileassetd ask at boot. XNU (bsd/kern/proc_info.c
 // proc_pid_rusage -> kern_resource.c proc_get_rusage) writes the whole rusage_info_v<flavor> (libproc passes no size)
 // and EINVAL for a flavor above RUSAGE_INFO_CURRENT. From /proc/<pid>/stat and status: CPU times (ns), pageins
@@ -156,7 +156,7 @@ static uint64_t status_kb(const char* status, const char* key)
 	return 0;
 }
 
-static long x86code_pid_rusage(int32_t pid, uint32_t flavor, void* buffer)
+static long x86sim_pid_rusage(int32_t pid, uint32_t flavor, void* buffer)
 {
 	char path[64], stat[1024], status[4096];
 	char* statptr;
@@ -234,13 +234,13 @@ long sys_proc_info(uint32_t callnum, int32_t pid, uint32_t flavor,
 			else
 				return 0; // PROC_SELFSET_PCONTROL (1)
 		}
-		case 8: // dirtycontrol (x86Code RAM 2: process/memorystatus.c records it for jetsam.py)
-			return x86code_dirtycontrol(pid, flavor, arg, buffer, bufsize);
+		case 8: // dirtycontrol (x86Sim RAM 2: process/memorystatus.c records it for jetsam.py)
+			return x86sim_dirtycontrol(pid, flavor, arg, buffer, bufsize);
 		case 2: // proc_pidinfo
 			return _proc_pidinfo(pid, flavor, arg, buffer, bufsize);
-		case 1: // proc_listpids (x86Code)
+		case 1: // proc_listpids (x86Sim)
 			return _proc_listpids((uint32_t)pid, flavor, buffer, bufsize);
-		case 7: // PROC_INFO_CALL_TERMINATE: proc_terminate (x86Code RAM 7)
+		case 7: // PROC_INFO_CALL_TERMINATE: proc_terminate (x86Sim RAM 7)
 		{
 			// launchd_sim tears down a dead client's process-scoped XPC services (ServiceType Application) and stops
 			// jobs with proc_terminate(). Unsupported, every such service outlived its client for good ("could not
@@ -250,7 +250,7 @@ long sys_proc_info(uint32_t callnum, int32_t pid, uint32_t flavor,
 				return -EPERM;
 			int sig = SIGTERM;
 			uint32_t st = 0;
-			if (x86code_dirtycontrol(pid, 3 /* PROC_DIRTYCONTROL_GET */, 0, &st, sizeof st) >= 0
+			if (x86sim_dirtycontrol(pid, 3 /* PROC_DIRTYCONTROL_GET */, 0, &st, sizeof st) >= 0
 					&& (st & 1 /* TRACKED */) && !(st & 4 /* IS_DIRTY */))
 				sig = SIGKILL;
 			long r = sys_kill(pid, sig, 1);
@@ -258,13 +258,13 @@ long sys_proc_info(uint32_t callnum, int32_t pid, uint32_t flavor,
 				return r;
 			return sig;
 		}
-		case 9: // PROC_INFO_CALL_PIDRUSAGE: proc_pid_rusage (x86Code Align 1)
-			return x86code_pid_rusage(pid, flavor, buffer);
+		case 9: // PROC_INFO_CALL_PIDRUSAGE: proc_pid_rusage (x86Sim Align 1)
+			return x86sim_pid_rusage(pid, flavor, buffer);
 		case 3: // proc_pidfdinfo
 		default:
 			__simple_printf("sys_proc_info(): Unsupported callnum: %d\n",
 					callnum);
-			x86code_unsupported("proc_info", callnum);
+			x86sim_unsupported("proc_info", callnum);
 			return -ENOTSUP;
 	}
 }
@@ -290,7 +290,7 @@ static long _proc_pidinfo_regionpath(int32_t pid, uint64_t arg, void* buffer, in
 static long _proc_pidinfo_taskinfo(int32_t pid, void* buffer, int32_t bufsize);
 static long _proc_pidinfo_taskallinfo(int32_t pid, void* buffer, int32_t bufsize);
 static long _proc_pidinfo_listthreads(int32_t pid, void* buffer, int32_t bufsize);
-uint32_t _proc_platform(int32_t pid); // x86Code: also used by sysctl kern.osproductversion
+uint32_t _proc_platform(int32_t pid); // x86Sim: also used by sysctl kern.osproductversion
 
 long _proc_pidinfo(int32_t pid, uint32_t flavor, uint64_t arg, void* buffer, int32_t bufsize)
 {
@@ -316,7 +316,7 @@ long _proc_pidinfo(int32_t pid, uint32_t flavor, uint64_t arg, void* buffer, int
 		{
 			return _proc_pidinfo_tbsdinfo(pid, buffer, bufsize);
 		}
-		case PROC_PIDT_BSDINFOWITHUNIQID: // x86Code
+		case PROC_PIDT_BSDINFOWITHUNIQID: // x86Sim
 		{
 			struct proc_bsdinfowithuniqid* info = buffer;
 			long ret;
@@ -354,7 +354,7 @@ long _proc_pidinfo(int32_t pid, uint32_t flavor, uint64_t arg, void* buffer, int
 		{
 			return _proc_pidinfo_listthreads(pid, buffer, bufsize);
 		}
-		case 30: // PROC_PIDPLATFORMINFO (x86Code)
+		case 30: // PROC_PIDPLATFORMINFO (x86Sim)
 		{
 			uint32_t platform;
 			if (bufsize < sizeof(uint32_t))
@@ -365,14 +365,14 @@ long _proc_pidinfo(int32_t pid, uint32_t flavor, uint64_t arg, void* buffer, int
 			*(uint32_t*) buffer = platform;
 			return sizeof(uint32_t);
 		}
-		case 25: // PROC_PIDEXITREASONBASICINFO (x86Code): no exit reasons are recorded. launchd_sim asks for every exited
+		case 25: // PROC_PIDEXITREASONBASICINFO (x86Sim): no exit reasons are recorded. launchd_sim asks for every exited
 			// job and takes ENOENT as "none"; ENOTSUP made it assert at each exit ("launchd_sim + 186420 ... 0x2d").
 			return -ENOENT;
 		default:
 		{
 			__simple_printf("sys_proc_info(): Unsupported pidinfo flavor: %d\n",
 					flavor);
-			x86code_unsupported("proc_pidinfo", flavor);
+			x86sim_unsupported("proc_pidinfo", flavor);
 			return -ENOTSUP;
 		}
 	}
@@ -381,7 +381,7 @@ long _proc_pidinfo(int32_t pid, uint32_t flavor, uint64_t arg, void* buffer, int
 static char fakeuuid[16];
 
 /*
- * x86Code: the platform of a process (XNU's p_platform): LC_BUILD_VERSION of its main
+ * x86Sim: the platform of a process (XNU's p_platform): LC_BUILD_VERSION of its main
  * executable (x86_64 slice), or the LC_VERSION_MIN_* equivalent. 0 if unknown.
  */
 uint32_t _proc_platform(int32_t pid)
@@ -437,7 +437,7 @@ out:
 	return platform;
 }
 
-// x86Code: proc_info_extended_id (545): proc_info for a pid, optionally checked against
+// x86Sim: proc_info_extended_id (545): proc_info for a pid, optionally checked against
 // a unique id; the id is not checked here.
 long sys_proc_info_extended_id(int32_t callnum, int32_t pid, uint32_t flavor, uint32_t flags,
 		uint64_t ext_id, uint64_t arg, void* buffer, int32_t buffersize)
@@ -511,7 +511,7 @@ static long _proc_pidonfo_uniqinfo(int32_t pid, void* buffer, int32_t bufsize)
 	info->p_puniqueid |= (ppid & 0xffff);
 
 #endif
-	return sizeof(struct proc_uniqidentifierinfo); // x86Code: XNU returns the structure size
+	return sizeof(struct proc_uniqidentifierinfo); // x86Sim: XNU returns the structure size
 }
 
 // glibc bits/confname.h
@@ -601,7 +601,7 @@ static long _proc_pidinfo_tbsdinfo(int32_t pid, void* buffer, int32_t bufsize)
 	info->pbi_start_tvusec = starttime_usecs;
 
 	memcpy(info->pbi_comm, shortinfo.pbsi_comm, sizeof(info->pbi_comm));
-	// x86Code: pbi_name is the long name (2 * MAXCOMLEN), which proc_name() prefers
+	// x86Sim: pbi_name is the long name (2 * MAXCOMLEN), which proc_name() prefers
 	{
 		char cpath[64], comm[32];
 		__simple_sprintf(cpath, "/proc/%d/comm", pid);
@@ -644,7 +644,7 @@ static long _proc_pidinfo_pidthreadinfo(int32_t pid, uint64_t thread_handle, voi
 	}
 
 	// TODO: Other proc_threadinfo fields
-	return sizeof(struct proc_threadinfo); // x86Code: XNU returns the structure size
+	return sizeof(struct proc_threadinfo); // x86Sim: XNU returns the structure size
 }
 
 static long _proc_pidinfo_shortbsdinfo(int32_t pid, void* buffer, int32_t bufsize)
@@ -675,7 +675,7 @@ static long _proc_pidinfo_shortbsdinfo(int32_t pid, void* buffer, int32_t bufsiz
 	// comm
 	READELEM();
 	strncpy(info->pbsi_comm, elem, sizeof(info->pbsi_comm));
-	darling_proc_name(pid, elem, info->pbsi_comm, sizeof(info->pbsi_comm)); // x86Code
+	darling_proc_name(pid, elem, info->pbsi_comm, sizeof(info->pbsi_comm)); // x86Sim
 
 	// process state
 	READELEM();
@@ -722,7 +722,7 @@ static long _proc_pidinfo_shortbsdinfo(int32_t pid, void* buffer, int32_t bufsiz
 	if (is_64_bit)
 		info->pbsi_flags |= P_LP64;
 
-	return sizeof(struct proc_bsdshortinfo); // x86Code: XNU returns the structure size
+	return sizeof(struct proc_bsdshortinfo); // x86Sim: XNU returns the structure size
 reterr:
 	return -EINVAL;
 }
@@ -794,7 +794,7 @@ static long _proc_pidinfo_regionpathinfo(int32_t pid, uint64_t arg, void* buffer
 	}
 
 	memcpy(buffer, &my_rpi, sizeof(my_rpi));
-	return foundRegion ? sizeof(struct proc_regionwithpathinfo) : -ESRCH; // x86Code: XNU returns the structure size
+	return foundRegion ? sizeof(struct proc_regionwithpathinfo) : -ESRCH; // x86Sim: XNU returns the structure size
 }
 
 static long _proc_pidinfo_regionpath(int32_t pid, uint64_t arg, void* buffer, int32_t buffer_size) {
@@ -956,7 +956,7 @@ static long _proc_pidinfo_pathinfo(int32_t pid, void* buffer, int32_t bufsize)
 		return rv;
 
 	strncpy(buffer, args.path, bufsize);
-	// x86Code: XNU's PROC_PIDPATHINFO returns 0 on success (proc_pidpathinfo() never sets retval; libproc's
+	// x86Sim: XNU's PROC_PIDPATHINFO returns 0 on success (proc_pidpathinfo() never sets retval; libproc's
 	// proc_pidpath() takes the strlen itself). CloudKit's CKPIDIsStillAlive() calls proc_pidinfo() directly and wants
 	// 0 and a non-empty path: with the length here cloudd took every client for dead ("processIsAttached" NO) and
 	// answered every container proxy request with (nil, nil), which trapped syncdefaultsd and amsaccountsd.
@@ -1015,7 +1015,7 @@ static long _proc_pidinfo_taskinfo(int32_t pid, void* buffer, int32_t bufsize)
 	READELEM();
 	uint64_t rss = __simple_atoi(elem, NULL);
 
-	// x86Code (Align 1): XNU's proc_pidtaskinfo reports sizes in bytes and times in nanoseconds (bsd/kern/proc_info.c
+	// x86Sim (Align 1): XNU's proc_pidtaskinfo reports sizes in bytes and times in nanoseconds (bsd/kern/proc_info.c
 	// fill_taskprocinfo); /proc/<pid>/stat has rss in pages and times in clock ticks (USER_HZ 100): the resident
 	// size was 4096x too small, the CPU times 10^7x.
 	ti->pti_virtual_size = vsize;

@@ -1,6 +1,6 @@
 #ifndef NETWORK_SOCKEXTRA_H
 #define NETWORK_SOCKEXTRA_H
-// x86Code: socket options and ioctls Network.framework asks for that Linux has no direct counterpart of, answered as
+// x86Sim: socket options and ioctls Network.framework asks for that Linux has no direct counterpart of, answered as
 // XNU does (see FINDINGS.md "Spike 3.10"): IP_OUT_IF/IPV6_OUT_IF, SO_CONNECTION_IDLE, TCP_NOTSENT_LOWAT, SIOCGCONNINFO.
 
 #define BSD_IP_OUT_IF 9696          // netinet/in_private.h (IPPROTO_IP), get only

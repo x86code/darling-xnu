@@ -14,7 +14,7 @@ int _dserver_rpc_kqchan_proc_open_4libkqueue(int32_t pid, uint32_t flags, int* o
 VISIBLE
 int _dup_4libkqueue(int fd);
 
-// x86Code: from willi/darling-xnu#8 (EVFILT_SOCK)
+// x86Sim: from willi/darling-xnu#8 (EVFILT_SOCK)
 // EVFILT_SOCK (libkqueue's src/linux/socket.c) and the socket filters' error reports: a socket as XNU's
 // filt_sockev_common sees it, derived from the Linux socket (sostate.h).
 

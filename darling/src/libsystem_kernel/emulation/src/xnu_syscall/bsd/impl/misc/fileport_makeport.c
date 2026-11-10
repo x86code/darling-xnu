@@ -5,7 +5,7 @@
 #include <darling/emulation/linux_premigration/linux-syscalls/linux.h>
 #include <darlingserver/rpc.h>
 
-// x86Code: fileports are kept by darlingserver (it holds a copy of the fd); this used the old LKM API and crashed
+// x86Sim: fileports are kept by darlingserver (it holds a copy of the fd); this used the old LKM API and crashed
 // (libxpc's xpc_fd_create, NSFileHandle over NSXPC: chronod's widget archive file promises)
 long sys_fileport_makeport(int fd, int* port)
 {

@@ -27,7 +27,7 @@ int _dup_4libkqueue(int fd) {
 	return ret;
 };
 
-// x86Code: from willi/darling-xnu#8: EVFILT_SOCK's view of a socket (sostate.h)
+// x86Sim: from willi/darling-xnu#8: EVFILT_SOCK's view of a socket (sostate.h)
 int _socket_state_4libkqueue(int fd, struct socket_state_4libkqueue* state) {
 	return socket_state(fd, state);
 };

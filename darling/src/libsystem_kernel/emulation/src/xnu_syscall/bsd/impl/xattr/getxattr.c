@@ -33,7 +33,7 @@ long sys_getxattr(const char* path, const char* name, char* value,
 	char lname[XATTR_LINUX_NAME_MAX];
 	if (xattr_name_to_linux(name, lname) < 0)
 		return -ENAMETOOLONG;
-	// x86Code: XATTR_NOFOLLOW reads the link's own attributes (as removexattr/listxattr do).
+	// x86Sim: XATTR_NOFOLLOW reads the link's own attributes (as removexattr/listxattr do).
 	if (options & XATTR_NOFOLLOW)
 		ret = LINUX_SYSCALL(__NR_lgetxattr, vc.path, lname, value, size);
 	else
@@ -42,7 +42,7 @@ long sys_getxattr(const char* path, const char* name, char* value,
 	if (ret < 0)
 		return XATTR_ERR(ret);
 
-	// x86Code: return the attribute's length (was 0), like fgetxattr; callers size their
+	// x86Sim: return the attribute's length (was 0), like fgetxattr; callers size their
 	// buffer with getxattr(..., NULL, 0) and treated every attribute as empty.
 	return ret;
 }

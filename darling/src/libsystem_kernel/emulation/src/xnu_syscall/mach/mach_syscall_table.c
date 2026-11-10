@@ -6,7 +6,7 @@
 __attribute__((visibility("hidden")))
 void* __mach_syscall_table[128] = {
 	[10] = _kernelrpc_mach_vm_allocate_trap_impl,
-	[11] = _kernelrpc_mach_vm_purgable_control_trap_impl, // x86Code
+	[11] = _kernelrpc_mach_vm_purgable_control_trap_impl, // x86Sim
 	[12] = _kernelrpc_mach_vm_deallocate_trap_impl,
 	[14] = _kernelrpc_mach_vm_protect_trap_impl,
 	[15] = _kernelrpc_mach_vm_map_trap_impl,
@@ -59,7 +59,7 @@ void* __mach_syscall_table[128] = {
 	[92] = mk_timer_destroy_impl,
 	[93] = mk_timer_arm_impl,
 	[94] = mk_timer_cancel_impl,
-	[95] = mk_timer_arm_leeway_impl, // x86Code
+	[95] = mk_timer_arm_leeway_impl, // x86Sim
 };
 
 extern void __simple_printf(const char* format, ...);

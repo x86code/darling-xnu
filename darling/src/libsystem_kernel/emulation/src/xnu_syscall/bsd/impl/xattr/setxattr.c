@@ -20,7 +20,7 @@ long sys_setxattr(const char* path, const char* name, const void* value,
 	if (pos != 0)
 		return -ERANGE;
 
-	// x86Code: resolve the path in Darling's virtual root like getxattr/listxattr do
+	// x86Sim: resolve the path in Darling's virtual root like getxattr/listxattr do
 	struct vchroot_expand_args vc;
 	vc.flags = (options & XATTR_NOFOLLOW) ? 0 : VCHROOT_FOLLOW;
 	vc.dfd = get_perthread_wd();

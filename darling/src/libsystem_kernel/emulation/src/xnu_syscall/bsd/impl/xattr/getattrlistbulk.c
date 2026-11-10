@@ -11,7 +11,7 @@
 #include <darling/emulation/xnu_syscall/bsd/impl/xattr/getattrlistat.h>
 
 /*
- * x86Code: getattrlistbulk(dirfd, alist, buf, size, options) on top of getattrlistat:
+ * x86Sim: getattrlistbulk(dirfd, alist, buf, size, options) on top of getattrlistat:
  * one attribute record per directory entry ("." and ".." skipped), each padded to
  * 8 bytes as XNU does. Returns the number of records, 0 at the end. An entry that
  * does not fit is left for the next call (the directory offset is moved back).

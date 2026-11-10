@@ -59,7 +59,7 @@
 #define WQ_FLAG_THREAD_TSD_BASE_SET  0x00200000
 #define WQ_FLAG_THREAD_WORKLOOP      0x00400000
 #define WQ_FLAG_THREAD_OUTSIDEQOS    0x00800000
-// x86Code: Swift concurrency's cooperative pool (XNU: WQOPS_QUEUE_REQTHREADS2 asks for these)
+// x86Sim: Swift concurrency's cooperative pool (XNU: WQOPS_QUEUE_REQTHREADS2 asks for these)
 #define WQ_FLAG_THREAD_COOPERATIVE   0x01000000
 #ifndef _PTHREAD_PRIORITY_COOPERATIVE_FLAG
 #define _PTHREAD_PRIORITY_COOPERATIVE_FLAG 0x08000000u
@@ -68,7 +68,7 @@
 #define WORKQ_EXIT_THREAD_NKEVENT (-1)
 
 static int workq_sem = WQ_MAX_THREADS; // max 64 threads in use
-// x86Code: constrained (not overcommit / kevent / workloop / event manager) threads in use, see wq_spawn
+// x86Sim: constrained (not overcommit / kevent / workloop / event manager) threads in use, see wq_spawn
 static int workq_constrained_sem = WQ_MAX_THREADS;
 static os_unfair_lock workq_parked_lock = OS_UNFAIR_LOCK_INIT;
 // static int workq_parked_threads = 0; // num spawned, but unused threads
@@ -93,7 +93,7 @@ struct timespec
 	long tv_nsec;
 };
 
-// x86Code: libsystem_kernel must not export os_unfair_lock_{lock,unlock}: its weak
+// x86Sim: libsystem_kernel must not export os_unfair_lock_{lock,unlock}: its weak
 // stubs shadowed libsystem_platform's real locks for foreign libSystems (iOS simulator).
 // Use libsimple's lock here instead (same 32-bit, zero-initialised layout).
 #include <libsimple/lock.h>
@@ -111,7 +111,7 @@ static int priority_to_class(int prio);
 // This is horrible, but it may work
 static struct wq_kevent_data* wq_event_pending = NULL;
 
-// x86Code: kevent batches handed to workqueue threads, matched on return by the
+// x86Sim: kevent batches handed to workqueue threads, matched on return by the
 // events pointer (libpthread passes the same keventlist back). The single
 // wq_event_pending above gets overwritten by ordinary thread requests.
 static struct wq_kevent_data* wq_events_inflight[WQ_MAX_THREADS];
@@ -185,7 +185,7 @@ static int extract_wq_flags(int priority) {
 		flags |= WQ_FLAG_THREAD_OVERCOMMIT;
 	}
 
-	// x86Code: a cooperative pool thread stays one when it is parked and reused
+	// x86Sim: a cooperative pool thread stays one when it is parked and reused
 	if (priority & _PTHREAD_PRIORITY_COOPERATIVE_FLAG) {
 		flags |= WQ_FLAG_THREAD_COOPERATIVE;
 	}
@@ -201,9 +201,9 @@ static bool wq_flags_constrained(uintptr_t flags)
 
 static void wq_cap_init(void)
 {
-	extern bool darling_x86code_arm64;
+	extern bool darling_x86sim_arm64;
 	static int capped;
-	if (darling_x86code_arm64 && !__atomic_exchange_n(&capped, 1, __ATOMIC_ACQ_REL))
+	if (darling_x86sim_arm64 && !__atomic_exchange_n(&capped, 1, __ATOMIC_ACQ_REL))
 		__atomic_fetch_sub(&workq_constrained_sem, WQ_MAX_THREADS - 24, __ATOMIC_ACQ_REL);
 }
 
@@ -220,7 +220,7 @@ static int sem_trydown(int* sem)
 
 static void wq_start_one(int flags, struct wq_kevent_data* wq_event);
 
-// x86Code (Speed 17): on arm64 a constrained request made while the capped constrained pool is full is queued here,
+// x86Sim (Speed 17): on arm64 a constrained request made while the capped constrained pool is full is queued here,
 // as XNU queues it, instead of blocking the requester in sem_down. A requester blocked there could be a worker the
 // pool was waiting for: geod again sat with 24 workers in futex waits and Maps' main thread black for good (Speed 17
 // run fb). A worker whose run ends, and every new request, start queued ones while a constrained slot is free.
@@ -248,12 +248,12 @@ static void wq_cpend_drain(void)
 	}
 }
 
-// x86Code: wake a parked workqueue thread (or create one) per requested thread
+// x86Sim: wake a parked workqueue thread (or create one) per requested thread
 static void wq_spawn(int flags, struct wq_kevent_data* wq_event, int affinity)
 {
 	int i;
 
-	// x86Code: arm64 simulator processes (every thread runs a JIT with its own code cache and translation state,
+	// x86Sim: arm64 simulator processes (every thread runs a JIT with its own code cache and translation state,
 	// ~20 MB) get at most 24 constrained workqueue threads instead of 64: a slow JIT let backlogs grow
 	// launchd_sim to 66 threads and the boot past its memory budget.
 	// Speed 15: the cap covers constrained requests only, as XNU's constrained pool does. Overcommit, kevent,
@@ -264,11 +264,11 @@ static void wq_spawn(int flags, struct wq_kevent_data* wq_event, int affinity)
 	wq_cap_init();
 	const bool constrained = wq_flags_constrained(flags);
 
-	extern bool darling_x86code_arm64;
+	extern bool darling_x86sim_arm64;
 	for (i = 0; i < affinity; i++)
 	{
 		// Increase the amount of running threads
-		if (constrained && darling_x86code_arm64 && wq_event == NULL)
+		if (constrained && darling_x86sim_arm64 && wq_event == NULL)
 		{
 			libsimple_lock_lock(&wq_cpend_lock);
 			if (wq_cpend_n < (int) (sizeof(wq_cpend_flags) / sizeof(wq_cpend_flags[0])))
@@ -334,7 +334,7 @@ static void wq_start_one(int flags, struct wq_kevent_data* wq_event)
 	}
 }
 
-// x86Code: XNU runs at most one event manager thread per process (the manager queue and
+// x86Sim: XNU runs at most one event manager thread per process (the manager queue and
 // libdispatch's muxnotes, mach-port/proc/signal knotes shared by several sources, are only
 // touched there). We started one for every manager thread request: _dispatch_mgr_queue_poke
 // (WQOPS_QUEUE_REQTHREADS) and kevent batches (WQOPS_QUEUE_REQTHREAD_FOR_KEVENT, kevent_qos.c)
@@ -408,7 +408,7 @@ long sys_workq_kernreturn(int options, void* item, int affinity, int prio)
 	// item is only used with WQOPS_QUEUE_ADD
 	switch (options)
 	{
-		case WQOPS_THREAD_WORKLOOP_RETURN: // x86Code: same hand-back as kevent threads
+		case WQOPS_THREAD_WORKLOOP_RETURN: // x86Sim: same hand-back as kevent threads
 		case WQOPS_THREAD_KEVENT_RETURN:
 		{
 			struct kevent_qos_s* keventlist = item;
@@ -446,9 +446,9 @@ long sys_workq_kernreturn(int options, void* item, int affinity, int prio)
 			dthread_t dthread;
 			bool terminating = false;
 
-			// x86Code: the run's flags (wq_spawn's) say which limits it counted against
+			// x86Sim: the run's flags (wq_spawn's) say which limits it counted against
 			const uintptr_t run_flags = (uintptr_t) _pthread_getspecific_direct(__PTK_DARLING_WQ_FLAGS);
-			// x86Code: an event manager thread's run ends here
+			// x86Sim: an event manager thread's run ends here
 			if (run_flags & WQ_FLAG_THREAD_EVENT_MANAGER)
 			{
 				_pthread_setspecific_direct(__PTK_DARLING_WQ_FLAGS, 0);
@@ -482,7 +482,7 @@ long sys_workq_kernreturn(int options, void* item, int affinity, int prio)
 
 			// Wait until someone calls WQOPS_QUEUE_REQTHREADS
 			// and wakes us up
-			// (x86Code note: keep the idle timeout. Each reuse leaks a stack frame cycle,
+			// (x86Sim note: keep the idle timeout. Each reuse leaks a stack frame cycle,
 			// see FINDINGS; exiting idle threads is what keeps that bounded.)
 			if (!sem_down(&me.sem, 15))
 			{
@@ -517,7 +517,7 @@ resume_thread: // we want the thread to resume, but it might be just to die
 			thread_self = _pthread_getspecific_direct(_PTHREAD_TSD_SLOT_MACH_THREAD_SELF);
 			dthread = _pthread_getspecific_direct(_PTHREAD_TSD_SLOT_PTHREAD_SELF);
 
-			// x86Code: re-enter on the thread's entry stack (not this deep one)
+			// x86Sim: re-enter on the thread's entry stack (not this deep one)
 			wqueue_entry_point_asm_jump_entry_stack(dthread, thread_self, dthread->stackbottom, 
 				(!terminating && me.event) ? me.event->events : NULL, 
 				me.flags | WQ_FLAG_THREAD_REUSE,
@@ -544,7 +544,7 @@ resume_thread: // we want the thread to resume, but it might be just to die
 
 			int i, flags = extract_wq_flags(prio);
 
-			// x86Code: REQTHREADS2 asks for cooperative pool threads (XNU's workq_reqthreads(..., cooperative =
+			// x86Sim: REQTHREADS2 asks for cooperative pool threads (XNU's workq_reqthreads(..., cooperative =
 			// true)): their upcall carries WQ_FLAG_THREAD_COOPERATIVE, so libpthread hands libdispatch a priority
 			// with _PTHREAD_PRIORITY_COOPERATIVE_FLAG and the worker drains the cooperative root queue. Without
 			// it the worker drained the plain root queue of that QoS, and work on the cooperative queues (every
@@ -560,7 +560,7 @@ resume_thread: // we want the thread to resume, but it might be just to die
 			
 			// __simple_printf("Thread requested with prio %d\n", prio & WQ_FLAG_THREAD_PRIOMASK);
 
-			// x86Code: one event manager thread at a time (as XNU)
+			// x86Sim: one event manager thread at a time (as XNU)
 			if ((flags & WQ_FLAG_THREAD_EVENT_MANAGER) && !wq_mgr_claim(wq_event))
 				return 0;
 			wq_spawn(flags, wq_event, affinity);
@@ -587,7 +587,7 @@ resume_thread: // we want the thread to resume, but it might be just to die
 #endif
 }
 
-// x86Code: a counting semaphore that cannot lose a post. The old one stored -1 after
+// x86Sim: a counting semaphore that cannot lose a post. The old one stored -1 after
 // decrementing (and 1 after incrementing), so a post that landed between a waiter's
 // decrement and its store was overwritten and the waiter slept on. A parked workqueue
 // thread then missed its WQOPS_QUEUE_REQTHREADS wakeup: the request was dropped and the

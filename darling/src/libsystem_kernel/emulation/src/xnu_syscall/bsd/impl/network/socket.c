@@ -47,7 +47,7 @@ long sys_socket(int domain, int type, int protocol)
 	return ret;
 }
 
-// x86Code: socket_delegate (BSD 450): a socket whose traffic is attributed to another process (epid). iOS 27's
+// x86Sim: socket_delegate (BSD 450): a socket whose traffic is attributed to another process (epid). iOS 27's
 // Network.framework creates its flow sockets with it (NSURLSession in WebKit's Networking process, mobileassetd ...);
 // without it no TCP socket was made and every request failed "offline". Attribution has no Linux meaning: a socket.
 long sys_socket_delegate(int domain, int type, int protocol, int epid)

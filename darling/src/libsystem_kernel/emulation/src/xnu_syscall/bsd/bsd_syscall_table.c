@@ -23,7 +23,7 @@
 #include <darling/emulation/xnu_syscall/bsd/impl/fcntl/open.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/fcntl/openat.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/guarded/guarded_close_np.h>
-#include <darling/emulation/xnu_syscall/bsd/impl/guarded/guarded_io_np.h> // x86Code
+#include <darling/emulation/xnu_syscall/bsd/impl/guarded/guarded_io_np.h> // x86Sim
 #include <darling/emulation/xnu_syscall/bsd/impl/guarded/guarded_kqueue_np.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/guarded/change_fdguard_np.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/guarded/guarded_open_np.h>
@@ -38,7 +38,7 @@
 #include <darling/emulation/xnu_syscall/bsd/impl/misc/csops.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/misc/csrctl.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/misc/fileport_makefd.h>
-#include <darling/emulation/xnu_syscall/bsd/impl/misc/x86code_memfd.h> // x86Code
+#include <darling/emulation/xnu_syscall/bsd/impl/misc/x86sim_memfd.h> // x86Sim
 #include <darling/emulation/xnu_syscall/bsd/impl/misc/fileport_makeport.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/misc/fsgetpath.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/misc/getentropy.h>
@@ -47,7 +47,7 @@
 #include <darling/emulation/xnu_syscall/bsd/impl/misc/getrlimit.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/misc/getrusage.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/misc/iopolicysys.h>
-#include <darling/emulation/xnu_syscall/bsd/impl/misc/fsctl.h> // x86Code
+#include <darling/emulation/xnu_syscall/bsd/impl/misc/fsctl.h> // x86Sim
 #include <darling/emulation/xnu_syscall/bsd/impl/misc/proc_info.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/misc/ptrace.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/misc/reboot.h>
@@ -57,7 +57,7 @@
 #include <darling/emulation/xnu_syscall/bsd/impl/misc/syscall.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/misc/sysctl.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/misc/thread_selfid.h>
-#include <darling/emulation/xnu_syscall/bsd/impl/misc/thread_selfcounts.h> // x86Code
+#include <darling/emulation/xnu_syscall/bsd/impl/misc/thread_selfcounts.h> // x86Sim
 #include <darling/emulation/xnu_syscall/bsd/impl/mman/madvise.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/mman/mman.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/mman/msync.h>
@@ -82,7 +82,7 @@
 #include <darling/emulation/xnu_syscall/bsd/impl/process/getpriority.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/process/posix_spawn.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/process/setpriority.h>
-#include <darling/emulation/xnu_syscall/bsd/impl/process/pid_suspend.h> // x86Code
+#include <darling/emulation/xnu_syscall/bsd/impl/process/pid_suspend.h> // x86Sim
 #include <darling/emulation/xnu_syscall/bsd/impl/process/vfork.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/process/wait4.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/process/waitid.h>
@@ -148,7 +148,7 @@
 #include <darling/emulation/xnu_syscall/bsd/impl/unistd/fchmod.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/unistd/fchmodat.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/unistd/fchmod_extended.h>
-#include <darling/emulation/xnu_syscall/bsd/impl/unistd/access_extended.h> // x86Code
+#include <darling/emulation/xnu_syscall/bsd/impl/unistd/access_extended.h> // x86Sim
 #include <darling/emulation/xnu_syscall/bsd/impl/unistd/fchown.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/unistd/fchownat.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/unistd/fdatasync.h>
@@ -224,15 +224,15 @@
 #include <darling/emulation/xnu_syscall/bsd/impl/xattr/setattrlistat.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/xattr/setxattr.h>
 
-long sys___mac_syscall(const char* policy, int call, void* arg); // x86Code
-long sys_persona(uint32_t operation, uint32_t flags, void* info, void* id, void* idlen, char* path); // x86Code
-long sys_memorystatus_control(uint32_t command, int32_t pid, uint32_t flags, void* buffer, unsigned long size); // x86Code
-long sys_x86code_quotactl(void); // x86Code Align 1 (process/memorystatus.c)
-long sys_x86code_proc_rlimit_control(int pid, int flavor, void* arg); // x86Code Align 1
-long sys_x86code_telemetry(void); // x86Code Align 1
-uint64_t sys_x86code_thread_selfusage(void); // x86Code Align 1
-long sys_kqueue_workloop_ctl(unsigned long cmd, uint64_t options, void* addr, unsigned long sz); // x86Code
-long sys_proc_info_extended_id(int32_t callnum, int32_t pid, uint32_t flavor, uint32_t flags, uint64_t ext_id, uint64_t arg, void* buffer, int32_t buffersize); // x86Code
+long sys___mac_syscall(const char* policy, int call, void* arg); // x86Sim
+long sys_persona(uint32_t operation, uint32_t flags, void* info, void* id, void* idlen, char* path); // x86Sim
+long sys_memorystatus_control(uint32_t command, int32_t pid, uint32_t flags, void* buffer, unsigned long size); // x86Sim
+long sys_x86sim_quotactl(void); // x86Sim Align 1 (process/memorystatus.c)
+long sys_x86sim_proc_rlimit_control(int pid, int flavor, void* arg); // x86Sim Align 1
+long sys_x86sim_telemetry(void); // x86Sim Align 1
+uint64_t sys_x86sim_thread_selfusage(void); // x86Sim Align 1
+long sys_kqueue_workloop_ctl(unsigned long cmd, uint64_t options, void* addr, unsigned long sz); // x86Sim
+long sys_proc_info_extended_id(int32_t callnum, int32_t pid, uint32_t flavor, uint32_t flags, uint64_t ext_id, uint64_t arg, void* buffer, int32_t buffersize); // x86Sim
 
 void* __bsd_syscall_table[600] = {
 	[0] = sys_syscall,
@@ -335,7 +335,7 @@ void* __bsd_syscall_table[600] = {
 	[157] = sys_statfs,
 	[158] = sys_fstatfs,
 	[159] = sys_unmount,
-	[165] = sys_x86code_quotactl, // x86Code Align 1
+	[165] = sys_x86sim_quotactl, // x86Sim Align 1
 	[169] = sys_csops,
 	[170] = sys_csops_audittoken,
 	[173] = sys_waitid,
@@ -353,7 +353,7 @@ void* __bsd_syscall_table[600] = {
 	[195] = sys_setrlimit,
 	[196] = sys_getdirentries,
 	[197] = sys_mmap,
-	[186] = sys_thread_selfcounts, // x86Code: was __unknown_syscall (SB 110% idle spin)
+	[186] = sys_thread_selfcounts, // x86Sim: was __unknown_syscall (SB 110% idle spin)
 	[199] = sys_lseek,
 	[200] = sys_truncate,
 	[201] = sys_ftruncate,
@@ -382,10 +382,10 @@ void* __bsd_syscall_table[600] = {
 	[239] = sys_fremovexattr,
 	[240] = sys_listxattr,
 	[241] = sys_flistxattr,
-	[242] = sys_fsctl, // x86Code
+	[242] = sys_fsctl, // x86Sim
 	[243] = sys_initgroups,
 	[244] = sys_posix_spawn,
-	[245] = sys_ffsctl, // x86Code
+	[245] = sys_ffsctl, // x86Sim
 	[254] = sys_semctl,
 	[255] = sys_semget,
 	[256] = sys_semop,
@@ -400,7 +400,7 @@ void* __bsd_syscall_table[600] = {
 	[274] = sys_sysctlbyname,
 	[282] = sys_chmod_extended,
 	[283] = sys_fchmod_extended,
-	[284] = sys_access_extended, // x86Code
+	[284] = sys_access_extended, // x86Sim
 	[285] = sys_settid,
 	[286] = sys_gettid,
 	[294] = sys_shared_region_check_np,
@@ -451,11 +451,11 @@ void* __bsd_syscall_table[600] = {
 	[374] = sys_kevent_qos,
 	[375] = sys_kevent_id,
 	[381] = sys___mac_syscall,
-	[479] = sys_openbyid_np, // x86Code
+	[479] = sys_openbyid_np, // x86Sim
 	[488] = sys_renameatx_np,
 	[494] = sys_persona,
 	[530] = sys_kqueue_workloop_ctl,
-	[544] = sys_ulock_wait2, // x86Code
+	[544] = sys_ulock_wait2, // x86Sim
 	[440] = sys_memorystatus_control,
 	[545] = sys_proc_info_extended_id,
 	[394] = sys_pselect,
@@ -490,17 +490,17 @@ void* __bsd_syscall_table[600] = {
 	[430] = sys_fileport_makeport,
 	[431] = sys_fileport_makefd,
 	[432] = sys_audit_session_port,
-	[433] = sys_pid_suspend, // x86Code
-	[434] = sys_pid_resume, // x86Code
+	[433] = sys_pid_suspend, // x86Sim
+	[434] = sys_pid_resume, // x86Sim
 	[441] = sys_guarded_open_np,
 	[442] = sys_guarded_close_np,
 	[443] = sys_guarded_kqueue_np,
-	[444] = sys_change_fdguard_np, // x86Code
-	[446] = sys_x86code_proc_rlimit_control, // x86Code Align 1
-	[447] = sys_connectx, // x86Code: Network.framework (iOS 27) connects with it
-	[448] = sys_disconnectx, // x86Code
-	[450] = sys_socket_delegate, // x86Code: Network.framework's flow sockets
-	[451] = sys_x86code_telemetry, // x86Code Align 1
+	[444] = sys_change_fdguard_np, // x86Sim
+	[446] = sys_x86sim_proc_rlimit_control, // x86Sim Align 1
+	[447] = sys_connectx, // x86Sim: Network.framework (iOS 27) connects with it
+	[448] = sys_disconnectx, // x86Sim
+	[450] = sys_socket_delegate, // x86Sim: Network.framework's flow sockets
+	[451] = sys_x86sim_telemetry, // x86Sim Align 1
 	[461] = sys_getattrlistbulk,
 	[462] = sys_clonefileat,
 	[463] = sys_openat,
@@ -518,19 +518,19 @@ void* __bsd_syscall_table[600] = {
 	[475] = sys_mkdirat,
 	[476] = sys_getattrlistat,
 	[478] = sys_bsdthread_ctl,
-	[482] = sys_x86code_thread_selfusage, // x86Code Align 1
+	[482] = sys_x86sim_thread_selfusage, // x86Sim Align 1
 	[483] = sys_csrctl,
-	[484] = sys_guarded_open_dprotected_np, // x86Code
-	[485] = sys_guarded_write_np, // x86Code
-	[486] = sys_guarded_pwrite_np, // x86Code
-	[487] = sys_guarded_writev_np, // x86Code
-	[499] = sys_work_interval_ctl, // x86Code: see x86code_memfd.c
+	[484] = sys_guarded_open_dprotected_np, // x86Sim
+	[485] = sys_guarded_write_np, // x86Sim
+	[486] = sys_guarded_pwrite_np, // x86Sim
+	[487] = sys_guarded_writev_np, // x86Sim
+	[499] = sys_work_interval_ctl, // x86Sim: see x86sim_memfd.c
 	[500] = sys_getentropy,
 	[515] = sys_ulock_wait,
 	[516] = sys_ulock_wake,
 	[517] = sys_fclonefileat,
 	[521] = sys_abort_with_payload,
 	[524] = sys_setattrlistat,
-	[598] = sys_x86code_inotify, // x86Code: Darling-private, see x86code_inotify.c
-	[599] = sys_x86code_memfd_for_region, // x86Code: Darling-private (spike3/metal)
+	[598] = sys_x86sim_inotify, // x86Sim: Darling-private, see x86sim_inotify.c
+	[599] = sys_x86sim_memfd_for_region, // x86Sim: Darling-private (spike3/metal)
 };

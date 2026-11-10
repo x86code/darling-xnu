@@ -51,7 +51,7 @@ long sys_bsdthread_register(void* thread_start, void* wqthread, int pthsize,
 	wqueue_entry_point = (bsdwqthread_entry_t) wqthread;
 	g_pth_regdata = *pth_regdata;
 
-	// x86Code: as XNU's bsdthread_register: the kernel copies the main thread's QoS out into the registration data
+	// x86Sim: as XNU's bsdthread_register: the kernel copies the main thread's QoS out into the registration data
 	// (the thread's requested QoS, THREAD_QOS_LEGACY = QOS_CLASS_DEFAULT when none was requested), and libpthread
 	// keeps it as qos_class_main(). Darling left it 0 (QOS_CLASS_UNSPECIFIED), so +[BSServiceQuality main]
 	// (BoardServices) hit its "invalid QoS class" assertion: mobiletimerd (AlarmKit) trapped at every start and apps'
@@ -153,22 +153,22 @@ void wqueue_entry_point_wrapper(void* self, int thread_port, void* stackaddr,
 	uintptr_t sp;
 
 	sigexc_thread_setup();
-	// x86Code: remember where this thread entered _start_wqthread, so a reused thread can
+	// x86Sim: remember where this thread entered _start_wqthread, so a reused thread can
 	// re-enter on the same (empty) stack, see wqueue_entry_point_asm_jump_entry_stack
 	__asm__ __volatile__ ("movq %%rsp, %0" : "=r"(sp));
 	_pthread_setspecific_direct(__PTK_DARLING_WQ_ENTRY_SP, sp);
-	_pthread_setspecific_direct(__PTK_DARLING_WQ_FLAGS, reuse); // x86Code: see wq_mgr_* in workq_kernreturn.c
+	_pthread_setspecific_direct(__PTK_DARLING_WQ_FLAGS, reuse); // x86Sim: see wq_mgr_* in workq_kernreturn.c
 	wqueue_entry_point_asm_jump(self, thread_port, stackaddr, item, reuse, nevents);
 }
 
-// x86Code: re-enter _start_wqthread for a reused workqueue thread with rsp reset to where the
+// x86Sim: re-enter _start_wqthread for a reused workqueue thread with rsp reset to where the
 // thread first entered it, as XNU's kernel starts each workqueue invocation on a fresh stack.
 // Jumping from deep inside the WQOPS_THREAD_RETURN call chain leaked that chain on every
 // reuse until a busy daemon's stack overflowed (notifyd after ~450 reuses).
 void wqueue_entry_point_asm_jump_entry_stack(void* self, int thread_port, void* stackaddr,
 		void* item, int reuse, int nevents) {
 	uintptr_t entry_sp = _pthread_getspecific_direct(__PTK_DARLING_WQ_ENTRY_SP);
-	_pthread_setspecific_direct(__PTK_DARLING_WQ_FLAGS, reuse); // x86Code: see wq_mgr_* in workq_kernreturn.c
+	_pthread_setspecific_direct(__PTK_DARLING_WQ_FLAGS, reuse); // x86Sim: see wq_mgr_* in workq_kernreturn.c
 	if (entry_sp == 0)
 		wqueue_entry_point_asm_jump(self, thread_port, stackaddr, item, reuse, nevents);
 

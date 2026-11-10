@@ -15,7 +15,7 @@
 
 
 /*
- * x86Code: fsctl (242) and ffsctl (245) were missing (ENOSYS). XNU passes them to the file system's VNOP_IOCTL, and
+ * x86Sim: fsctl (242) and ffsctl (245) were missing (ENOSYS). XNU passes them to the file system's VNOP_IOCTL, and
  * a request the file system doesn't know fails with ENOTTY. The ones the iOS simulator needs from APFS (it only runs
  * on APFS) are answered as APFS answers for a plain directory tree:
  * - _IOR('J', 74, uint64_t) (0x40084a4a): the id of the File Provider sync root enclosing the object, 0 for none.
@@ -46,10 +46,10 @@ static long fsctl_common(unsigned long cmd, void* data, const char* lpath)
 			struct fsioc_cas_bsdflags* cas = data;
 			if (!cas)
 				return -EFAULT;
-			uint32_t cur = x86code_bsdflags_get(lpath, 0);
+			uint32_t cur = x86sim_bsdflags_get(lpath, 0);
 			if (cur == cas->expected_flags && cur != cas->new_flags)
 			{
-				long r = x86code_bsdflags_set(lpath, cas->new_flags);
+				long r = x86sim_bsdflags_set(lpath, cas->new_flags);
 				if (r < 0)
 					return errno_linux_to_bsd(r);
 			}
@@ -107,5 +107,5 @@ long sys_ffsctl(int fd, unsigned long cmd, void* data, unsigned int options)
 	if (rv < 0)
 		return rv;
 	char buf[32];
-	return fsctl_common(cmd, data, x86code_fd_path(fd, buf));
+	return fsctl_common(cmd, data, x86sim_fd_path(fd, buf));
 }

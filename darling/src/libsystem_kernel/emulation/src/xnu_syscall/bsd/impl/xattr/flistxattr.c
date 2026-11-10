@@ -52,7 +52,7 @@ long sys_flistxattr(int fd, char* namebuf, unsigned long size, int options)
 	if (ret < 0)
 		return errno_linux_to_bsd(ret);
 
-	// x86Code: Linux names -> Darwin names (xattr_names.h)
+	// x86Sim: Linux names -> Darwin names (xattr_names.h)
 	ret = xattr_list_to_bsd(lbuf, ret, namebuf, namebuf ? size : 0);
 	if (ret < 0)
 		return errno_linux_to_bsd(ret);

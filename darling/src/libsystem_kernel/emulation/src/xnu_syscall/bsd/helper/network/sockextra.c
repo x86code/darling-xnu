@@ -1,4 +1,4 @@
-// x86Code: see sockextra.h
+// x86Sim: see sockextra.h
 #include <darling/emulation/xnu_syscall/bsd/helper/network/sockextra.h>
 
 #include <stddef.h>

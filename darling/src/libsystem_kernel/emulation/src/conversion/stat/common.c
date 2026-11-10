@@ -47,7 +47,7 @@ void stat_linux_to_bsd64(const struct linux_stat* lstat, struct stat64* stat)
 	stat->st_mtimespec.tv_nsec = lstat->st_mtime_nsec;
 	stat->st_ctimespec.tv_sec = lstat->st_ctime;
 	stat->st_ctimespec.tv_nsec = lstat->st_ctime_nsec;
-	// x86Code: was left uninitialized (stack garbage in getattrlist's ATTR_CMN_CRTIME/ADDEDTIME); Linux
+	// x86Sim: was left uninitialized (stack garbage in getattrlist's ATTR_CMN_CRTIME/ADDEDTIME); Linux
 	// stat has no birth time, so use the earlier of mtime and ctime
 	if (lstat->st_mtime < lstat->st_ctime || (lstat->st_mtime == lstat->st_ctime && lstat->st_mtime_nsec < lstat->st_ctime_nsec))
 		stat->st_birthtimespec = stat->st_mtimespec;
@@ -56,7 +56,7 @@ void stat_linux_to_bsd64(const struct linux_stat* lstat, struct stat64* stat)
 	stat->st_flags = 0;
 }
 
-// x86Code: Linux ST_* mount flags to BSD MNT_* (they were copied unconverted: Linux's ST_VALID read as MNT_UNION,
+// x86Sim: Linux ST_* mount flags to BSD MNT_* (they were copied unconverted: Linux's ST_VALID read as MNT_UNION,
 // ST_RELATIME as MNT_LOCAL, and MNT_LOCAL was missing elsewhere; dirhelper (confstr/_dirhelper_relative) refuses
 // non-local volumes with ENODEV, so chronod could not create its widget archive directories)
 static unsigned int statfs_flags_linux_to_bsd(unsigned long lflags, long ftype)
@@ -101,7 +101,7 @@ void statfs_linux_to_bsd64(const struct linux_statfs64* lstat, struct bsd_statfs
 	stat->f_flags = statfs_flags_linux_to_bsd(lstat->f_flags, lstat->f_type);
 }
 
-// x86Code: see common.h
+// x86Sim: see common.h
 void stat_set_flags64(struct stat64* stat, unsigned int flags)
 {
 	stat->st_flags = flags;

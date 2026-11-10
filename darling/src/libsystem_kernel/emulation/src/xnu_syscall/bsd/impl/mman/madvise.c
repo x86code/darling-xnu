@@ -33,7 +33,7 @@ long sys_madvise(void* addr, unsigned long len, int advice)
 
 	// advice < 0 are identical between OS X and Linux
 	// advice >= 5 are specific to OS X/BSD
-	// x86Code (Align 1): as XNU's madvise (bsd/kern/kern_mman.c): MADV_PAGEOUT (10) is ENOTSUP on release kernels and
+	// x86Sim (Align 1): as XNU's madvise (bsd/kern/kern_mman.c): MADV_PAGEOUT (10) is ENOTSUP on release kernels and
 	// an advice it doesn't know is EINVAL; this returned 0 for every value >= 5 and passed negative ones to Linux.
 	if (advice == 10 /* MADV_PAGEOUT */)
 		return -ENOTSUP;

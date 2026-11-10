@@ -43,6 +43,6 @@ int __linux_syscall(int nr, ...);
 
 long __darling_bsd_syscall(int nr, ...);
 long __unknown_syscall(int nr, ...);
-void x86code_unsupported(const char* kind, long num); // x86Code (Align 1): census, common/base.c
+void x86sim_unsupported(const char* kind, long num); // x86Sim (Align 1): census, common/base.c
 
 #endif // LINUX_BASE_H

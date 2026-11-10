@@ -1,6 +1,6 @@
-#ifndef X86CODE_XATTR_NAMES_H
-#define X86CODE_XATTR_NAMES_H
-// x86Code: Darwin extended attribute names have no namespace ("com.apple.FinderInfo", "ArchiveFilePromise_ReloadDate");
+#ifndef X86SIM_XATTR_NAMES_H
+#define X86SIM_XATTR_NAMES_H
+// x86Sim: Darwin extended attribute names have no namespace ("com.apple.FinderInfo", "ArchiveFilePromise_ReloadDate");
 // Linux only lets unprivileged processes use "user.*" ones and fails anything else with EOPNOTSUPP (chronod could not
 // write its widget archives, and ChronoServices' icon cache). Every Darwin name is stored as "user." + name; listing
 // returns the "user." attributes without the prefix and hides the other Linux namespaces. A missing attribute is
@@ -42,8 +42,8 @@ static inline long xattr_list_to_bsd(const char* list, long len, char* out, unsi
 		for (long k = 0; user && k < plen; k++)
 			if (list[i + k] != XATTR_LINUX_PREFIX[k])
 				user = 0;
-		// x86Code: chflags' storage (helper/misc/bsdflags.h) is not a Darwin attribute
-		static const char hidden[] = "user.x86code.bsdflags";
+		// x86Sim: chflags' storage (helper/misc/bsdflags.h) is not a Darwin attribute
+		static const char hidden[] = "user.x86sim.bsdflags";
 		if (user && n == (long) sizeof(hidden) - 1) {
 			int same = 1;
 			for (long k = 0; k < n; k++)

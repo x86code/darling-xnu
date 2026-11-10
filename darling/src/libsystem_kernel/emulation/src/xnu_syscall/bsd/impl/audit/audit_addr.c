@@ -5,7 +5,7 @@
 #include <darling/emulation/xnu_syscall/bsd/impl/unistd/geteuid.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/misc/getentropy.h>
 
-// x86Code: libsystem_kernel must not export os_unfair_lock_{lock,unlock}: its weak
+// x86Sim: libsystem_kernel must not export os_unfair_lock_{lock,unlock}: its weak
 // stubs shadowed libsystem_platform's real locks for foreign libSystems (iOS simulator).
 // Use libsimple's lock here instead (same 32-bit, zero-initialised layout).
 #include <libsimple/lock.h>

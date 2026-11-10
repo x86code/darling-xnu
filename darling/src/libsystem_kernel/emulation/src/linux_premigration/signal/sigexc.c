@@ -577,7 +577,7 @@ void float_state_to_mcontext(const x86_float_state32_t* s, linux_fpregset_t fx)
 
 void sigexc_thread_setup(void)
 {
-	// x86Code: a new thread inherits its creator's signal mask, which can have the
+	// x86Sim: a new thread inherits its creator's signal mask, which can have the
 	// SIGEXC/S2C signals blocked (threads started from inside a syscall, e.g. the
 	// workqueue). darlingserver then cannot reach the thread for S2C calls and both
 	// sides wait forever. Make sure they are unblocked.

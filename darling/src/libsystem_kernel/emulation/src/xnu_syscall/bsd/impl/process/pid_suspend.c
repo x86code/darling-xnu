@@ -1,4 +1,4 @@
-// x86Code: pid_suspend (433) and pid_resume (434).
+// x86Sim: pid_suspend (433) and pid_resume (434).
 //
 // RunningBoard suspends idle extensions and background apps with pid_suspend() and resumes them with pid_resume()
 // before giving them work. Both returned ENOSYS here ("pid_suspend() failed with error 78", ~10,000 times a boot),
@@ -7,7 +7,7 @@
 //
 // A device then reclaims suspended processes with jetsam when memory runs short; the simulator has no jetsam (and
 // every process here carries ~200 MB of private framework data: no dyld shared cache). So each suspension is also
-// recorded as /private/var/run/x86code-suspended/<pid> (mtime = when), removed on resume; cli/libexec/jetsam.py kills
+// recorded as /private/var/run/x86sim-suspended/<pid> (mtime = when), removed on resume; cli/libexec/jetsam.py kills
 // extensions and older background apps that stay suspended (the policy lives there, on the Linux side).
 #include <darling/emulation/xnu_syscall/bsd/impl/process/pid_suspend.h>
 #include <darling/emulation/common/base.h>
@@ -19,7 +19,7 @@
 #include <mach/mach.h>
 #include <sys/errno.h>
 
-#define SUSP_DIR "/private/var/run/x86code-suspended"
+#define SUSP_DIR "/private/var/run/x86sim-suspended"
 
 static void suspend_marker(int pid, int set)
 {

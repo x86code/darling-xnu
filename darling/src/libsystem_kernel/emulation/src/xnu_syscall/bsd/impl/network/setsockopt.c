@@ -32,7 +32,7 @@ long sys_setsockopt(int fd, int level, int optname, const void* optval, int optl
 		return socket_nosigpipe_set(fd, *(const int*) optval != 0);
 	}
 
-	// x86Code: IP_BOUND_IF / IPV6_BOUND_IF (XNU's interface scoping, netinet/in.h 25, netinet6/in6.h 125): Network.framework
+	// x86Sim: IP_BOUND_IF / IPV6_BOUND_IF (XNU's interface scoping, netinet/in.h 25, netinet6/in6.h 125): Network.framework
 	// binds every flow's socket to its path's interface; ENOTSUP failed the flow with ENETDOWN (NSURLErrorNotConnected).
 	// Linux's equivalent is SO_BINDTOIFINDEX (an index of 0 unbinds, as on XNU).
 	if ((level == 0 && optname == 25) || (level == 41 && optname == 125)) {
@@ -48,7 +48,7 @@ long sys_setsockopt(int fd, int level, int optname, const void* optval, int optl
 		return ret < 0 ? errno_linux_to_bsd(ret) : 0;
 	}
 
-	// x86Code: options Network.framework sets on every flow, answered as XNU does (sockextra.h)
+	// x86Sim: options Network.framework sets on every flow, answered as XNU does (sockextra.h)
 	if (level == BSD_SOL_SOCKET && optname == BSD_SO_CONNECTION_IDLE)
 		return sockextra_set_idle(fd, optval, optlen);
 	// SO_DEFUNCTOK (dnssd_clientstub sets it on every connection; EINVAL was logged): sockets are never defuncted

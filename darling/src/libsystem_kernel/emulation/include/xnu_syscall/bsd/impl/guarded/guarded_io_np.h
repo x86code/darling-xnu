@@ -5,7 +5,7 @@
 
 struct iovec;
 
-// x86Code: BSD syscalls 484-487
+// x86Sim: BSD syscalls 484-487
 long sys_guarded_open_dprotected_np(const char* path, const uint64_t* guard, unsigned int guardflags, int flags,
 		int dpclass, int dpflags, int mode);
 long sys_guarded_write_np(int fd, const uint64_t* guard, const void* buf, unsigned long nbyte);

@@ -9,7 +9,7 @@
 #include <darling/emulation/conversion/errno.h>
 #include <darling/emulation/conversion/fcntl/open.h>
 #include <darling/emulation/conversion/common_at.h>
-#include <darling/emulation/xnu_syscall/bsd/helper/misc/bsdflags.h> // x86Code
+#include <darling/emulation/xnu_syscall/bsd/helper/misc/bsdflags.h> // x86Sim
 #include <darling/emulation/conversion/stat/common.h>
 #include <darling/emulation/linux_premigration/vchroot_expand.h>
 #include <darling/emulation/xnu_syscall/bsd/helper/misc/fdpath.h>
@@ -22,7 +22,7 @@
 #include <darling/emulation/linux_premigration/linux-syscalls/linux.h>
 
 /*
- * getattrlist(2) family. x86Code: rewritten from a 4-attribute version that failed
+ * getattrlist(2) family. x86Sim: rewritten from a 4-attribute version that failed
  * everything else with EINVAL (Apple's realpath(), NSURL resource values and
  * containermanagerd all use the common attributes).
  *
@@ -95,7 +95,7 @@
 #define ATTR_VOL_ENCODINGSUSED  0x00010000
 #define ATTR_VOL_CAPABILITIES   0x00020000
 #define ATTR_VOL_UUID           0x00040000
-// x86Code: the newer volume attributes (XNU 8792+). installd's -[MIFileManager copyVolumeInfo:forURL:error:] asks
+// x86Sim: the newer volume attributes (XNU 8792+). installd's -[MIFileManager copyVolumeInfo:forURL:error:] asks
 // for ATTR_VOL_MOUNTPOINT|ATTR_VOL_UUID|ATTR_VOL_FSTYPENAME; EINVAL failed every app install (x86sim install).
 #define ATTR_VOL_MOUNTEXTFLAGS  0x00080000
 #define ATTR_VOL_FSTYPENAME     0x00100000
@@ -106,7 +106,7 @@
 #define ATTR_VOL_RESERVED_SIZE  0x20000000
 #define ATTR_VOL_ATTRIBUTES     0x40000000
 #define ATTR_VOL_INFO           0x80000000
-#define ATTR_VOL_VALIDMASK      0xF0FFFFFF // x86Code: with the attributes above
+#define ATTR_VOL_VALIDMASK      0xF0FFFFFF // x86Sim: with the attributes above
 
 // vol_capabilities_attr_t
 #define VOL_CAPABILITIES_FORMAT     0
@@ -168,7 +168,7 @@
 
 #define ATTR_FORK_VALIDMASK     0x00000003
 
-// x86Code: Darwin xattr names live in Linux's "user." namespace (xattr_names.h)
+// x86Sim: Darwin xattr names live in Linux's "user." namespace (xattr_names.h)
 #define XATTR_FINDER_INFO "user.com.apple.FinderInfo"
 #define XATTR_RESOURCE_FORK "user.com.apple.ResourceFork"
 
@@ -300,7 +300,7 @@ struct xnu_attrlist* alist, void *attributeBuffer, __SIZE_TYPE__ bufferSize, uns
 		return -EINVAL;
 
 	// Volume attributes: XNU's getattrlist does not require ATTR_VOL_INFO (only setattrlist does; the man page
-	// asks for it). x86Code: FileProvider's -[NSURL fp_volumeUUID] asks for ATTR_VOL_UUID alone, and every EINVAL
+	// asks for it). x86Sim: FileProvider's -[NSURL fp_volumeUUID] asks for ATTR_VOL_UUID alone, and every EINVAL
 	// left fileproviderd without volume UUIDs for its domains (Files could not open a document). XNU also uses
 	// the volume's root for a non-root object; we describe the volume holding any object.
 	if (alist->volattr & ~ATTR_VOL_VALIDMASK)
@@ -346,8 +346,8 @@ struct xnu_attrlist* alist, void *attributeBuffer, __SIZE_TYPE__ bufferSize, uns
 
 	stat_linux_to_bsd64(&lst, &st);
 	isdir = S_ISDIR(st.st_mode);
-	if (objfd >= 0 && !S_ISLNK(st.st_mode)) // x86Code: chflags flags (helper/misc/bsdflags.h)
-		st.st_flags = x86code_bsdflags_get_fd(objfd);
+	if (objfd >= 0 && !S_ISLNK(st.st_mode)) // x86Sim: chflags flags (helper/misc/bsdflags.h)
+		st.st_flags = x86sim_bsdflags_get_fd(objfd);
 	if (isdir)
 		dir = alist->dirattr;
 	else
@@ -382,7 +382,7 @@ struct xnu_attrlist* alist, void *attributeBuffer, __SIZE_TYPE__ bufferSize, uns
 #endif
 
 	// What we can return: everything except the attributes below
-	// x86Code: DATA_PROTECT_FLAGS (class 0) and CMNEXT_CLONEID are returned as APFS does: CoreFoundation's
+	// x86Sim: DATA_PROTECT_FLAGS (class 0) and CMNEXT_CLONEID are returned as APFS does: CoreFoundation's
 	// _kCFURLFileIDKey is NULL unless every attribute of its request comes back, and LaunchServices'
 	// -[FSNode checkResourceIsReachableAndReturnError:] needs it (no executable info, platform 0, -10814)
 	common = alist->commonattr & ~(ATTR_CMN_EXTENDED_SECURITY | ATTR_CMN_UUID | ATTR_CMN_GRPUUID
@@ -411,7 +411,7 @@ struct xnu_attrlist* alist, void *attributeBuffer, __SIZE_TYPE__ bufferSize, uns
 		// pack every requested attribute; the ones we lack as zero / empty
 		common = alist->commonattr;
 		vol = alist->volattr & ~ATTR_VOL_INFO;
-		// x86Code: as XNU (vfs_attr_pack_internal), even here directory attributes are packed for directories
+		// x86Sim: as XNU (vfs_attr_pack_internal), even here directory attributes are packed for directories
 		// only and file attributes for everything else: packing both shifted a file's attributes by the directory
 		// ones (FileProvider read a 491 KB file's ATTR_FILE_ALLOCSIZE as 491520 << 32, "2.11 PB" in Preview)
 		dir = isdir ? alist->dirattr : 0;
@@ -457,13 +457,13 @@ struct xnu_attrlist* alist, void *attributeBuffer, __SIZE_TYPE__ bufferSize, uns
 	uint64_t devid = st.st_dev;
 	uint64_t fileid = st.st_ino;
 	uint64_t parentid = 0;
-	uint32_t mntstatus = 0; // x86Code: DIR_MNTSTATUS_MNTPOINT for the root of a mounted file system
+	uint32_t mntstatus = 0; // x86Sim: DIR_MNTSTATUS_MNTPOINT for the root of a mounted file system
 	{
 		struct linux_stat pst;
 		int pfd = (objfd >= 0 && isdir) ? LINUX_SYSCALL(__NR_openat, objfd, "..", LINUX_O_PATH | LINUX_O_CLOEXEC, 0) : -1;
 		if (pfd >= 0)
 		{
-			// x86Code: the root of a mounted file system: its ".." is on another device, and the inode number
+			// x86Sim: the root of a mounted file system: its ".." is on another device, and the inode number
 			// alone can't say which one (every btrfs subvolume root is inode 256, so /home's parent "/" had
 			// /home's own ID and CoreServicesInternal's walk to the root never ended). Like a root, it is
 			// its own parent.
@@ -477,7 +477,7 @@ struct xnu_attrlist* alist, void *attributeBuffer, __SIZE_TYPE__ bufferSize, uns
 		}
 		else if (objfd >= 0)
 		{
-			// x86Code: ".." of a non-directory fails (ENOTDIR), so ATTR_CMN_PARENTID was 0 for every file;
+			// x86Sim: ".." of a non-directory fails (ENOTDIR), so ATTR_CMN_PARENTID was 0 for every file;
 			// CoreServicesInternal then has no file ID (_kCFURLFileIDKey NULL) and LaunchServices cannot make
 			// an FSNode for an executable. Use the directory of the fd's Linux path.
 			char procpath[32], lpath[GETATTR_PATH_MAX];
@@ -497,7 +497,7 @@ struct xnu_attrlist* alist, void *attributeBuffer, __SIZE_TYPE__ bufferSize, uns
 		}
 	}
 
-	// x86Code: the prefix root is the top of the tree: its parent is itself. Its Linux ".." is the directory that
+	// x86Sim: the prefix root is the top of the tree: its parent is itself. Its Linux ".." is the directory that
 	// holds the prefix (~), which the prefix sees as /Volumes/SystemRoot/home/<user>; CoreServicesInternal walks
 	// parent IDs up to the root, so it went root -> /Volumes/SystemRoot/home/... -> /Volumes -> root for ever
 	// (lsd spun at 100% CPU and never wrote its database when it was rebuilt).
@@ -507,10 +507,10 @@ struct xnu_attrlist* alist, void *attributeBuffer, __SIZE_TYPE__ bufferSize, uns
 		mntstatus = 1;
 	}
 
-	// x86Code: remember the path of IDs we hand out for fsgetpath
+	// x86Sim: remember the path of IDs we hand out for fsgetpath
 	if (fullpath[0] && (common & (ATTR_CMN_FILEID | ATTR_CMN_OBJID) || cmnext & ATTR_CMNEXT_LINKID))
 		fsgetpath_remember((uint32_t) devid, fileid, fullpath);
-	// x86Code (Speed 27): and the parent's, when its ID goes out (ATTR_CMN_PARENTID / PAROBJID). NSFileManager's
+	// x86Sim (Speed 27): and the parent's, when its ID goes out (ATTR_CMN_PARENTID / PAROBJID). NSFileManager's
 	// replaceItemAtURL (CoreServicesInternal's URLReplaceObject) resolves the item's parent directory by that ID; it
 	// was unknown, so every atomic replace failed "file doesn't exist": lsd never saved its rebuilt database and
 	// rebuilt it at every boot (45 s of the boot to home).
@@ -598,7 +598,7 @@ struct xnu_attrlist* alist, void *attributeBuffer, __SIZE_TYPE__ bufferSize, uns
 		getattr_put_u32(&p, st.st_flags);
 	if (common & ATTR_CMN_GEN_COUNT)
 	{
-		// x86Code: 0 means "not supported"; APFS counts content changes. Ours changes with the modification time
+		// x86Sim: 0 means "not supported"; APFS counts content changes. Ours changes with the modification time
 		// (never 0) for files and directories, which is what readers compare (FileProvider's libfssync).
 		uint32_t gen = 0;
 		if (S_ISREG(st.st_mode) || S_ISDIR(st.st_mode))
@@ -611,12 +611,12 @@ struct xnu_attrlist* alist, void *attributeBuffer, __SIZE_TYPE__ bufferSize, uns
 	}
 	if (common & ATTR_CMN_DOCUMENT_ID)
 	{
-		// x86Code: APFS gives a document id to an item once it is UF_TRACKED (chflags, helper/misc/bsdflags.h), and
+		// x86Sim: APFS gives a document id to an item once it is UF_TRACKED (chflags, helper/misc/bsdflags.h), and
 		// FileProvider's libfssync waits for it (EAGAIN while it is 0). Ours: the inode number's low 32 bits.
 		uint32_t docid = 0;
 		if (st.st_flags & 0x40 /* UF_TRACKED */)
 			docid = (uint32_t) st.st_ino ? (uint32_t) st.st_ino : 1;
-		// x86Code: and resolvable by fsgetpath/openbyid_np, as APFS resolves document ids
+		// x86Sim: and resolvable by fsgetpath/openbyid_np, as APFS resolves document ids
 		if (docid && docid != fileid && fullpath[0])
 			fsgetpath_remember((uint32_t) devid, docid, fullpath);
 		getattr_put_u32(&p, docid);
@@ -694,7 +694,7 @@ struct xnu_attrlist* alist, void *attributeBuffer, __SIZE_TYPE__ bufferSize, uns
 	}
 	if (vol & ATTR_VOL_MOUNTFLAGS)
 		getattr_put_u32(&p, sfs.f_flags);
-	if (vol & ATTR_VOL_MOUNTEXTFLAGS) // x86Code: packed as XNU does, right after the mount flags
+	if (vol & ATTR_VOL_MOUNTEXTFLAGS) // x86Sim: packed as XNU does, right after the mount flags
 		getattr_put_u32(&p, 0);
 	if (vol & ATTR_VOL_MOUNTEDDEVICE)
 		getattr_put_ref(&p, sfs.f_mntfromname);
@@ -703,7 +703,7 @@ struct xnu_attrlist* alist, void *attributeBuffer, __SIZE_TYPE__ bufferSize, uns
 	if (vol & ATTR_VOL_CAPABILITIES)
 	{
 		// What a Linux file system (and Darling's syscall layer) provides
-		// x86Code: inode numbers are persistent object IDs (ext4/btrfs/xfs), and fsgetpath resolves the IDs
+		// x86Sim: inode numbers are persistent object IDs (ext4/btrfs/xfs), and fsgetpath resolves the IDs
 		// getattrlist handed out (impl/misc/fsgetpath.c). Without PATH_FROM_ID CoreServicesInternal has no
 		// file ID (_kCFURLFileIDKey NULL), so LaunchServices cannot make an FSNode for an executable: no
 		// executable info, every record platform 0, extensions not found by bundle ID (-10814)
@@ -722,7 +722,7 @@ struct xnu_attrlist* alist, void *attributeBuffer, __SIZE_TYPE__ bufferSize, uns
 		uint64_t uuid[2] = { sfs.f_fsid, 0 };
 		getattr_put(&p, uuid, sizeof(uuid));
 	}
-	if (vol & ATTR_VOL_SPACEUSED) // x86Code
+	if (vol & ATTR_VOL_SPACEUSED) // x86Sim
 		getattr_put_u64(&p, (uint64_t) (sfs.f_blocks - sfs.f_bfree) * sfs.f_bsize);
 	if (vol & ATTR_VOL_QUOTA_SIZE)
 		getattr_put_u64(&p, 0);
@@ -738,7 +738,7 @@ struct xnu_attrlist* alist, void *attributeBuffer, __SIZE_TYPE__ bufferSize, uns
 		memcpy(&attrs[5], attrs, 5 * sizeof(uint32_t));
 		getattr_put(&p, attrs, sizeof(attrs));
 	}
-	// x86Code: the type name is the one statfs reports (apfs, see the statfs conversion); subtype 0, owner root
+	// x86Sim: the type name is the one statfs reports (apfs, see the statfs conversion); subtype 0, owner root
 	if (vol & ATTR_VOL_FSTYPENAME)
 		getattr_put_ref(&p, sfs.f_fstypename);
 	if (vol & ATTR_VOL_FSSUBTYPE)
@@ -825,7 +825,7 @@ struct xnu_attrlist* alist, void *attributeBuffer, __SIZE_TYPE__ bufferSize, uns
 		getattr_put(&p, fsid, sizeof(fsid));
 	}
 	if (cmnext & ATTR_CMNEXT_CLONEID)
-		getattr_put_u64(&p, fileid); // x86Code: an uncloned APFS file's clone ID is its own ID
+		getattr_put_u64(&p, fileid); // x86Sim: an uncloned APFS file's clone ID is its own ID
 	if (cmnext & ATTR_CMNEXT_EXT_FLAGS)
 		getattr_put_u64(&p, 0);
 	if (cmnext & ATTR_CMNEXT_RECURSIVE_GENCOUNT)

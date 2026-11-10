@@ -52,7 +52,7 @@ long sys_close_nocancel(int fd)
 	}
 
 	socket_tables_close(fd);
-	sockextra_closed(fd); // x86Code
+	sockextra_closed(fd); // x86Sim
 
 	ret = LINUX_SYSCALL1(__NR_close, fd);
 	if (ret < 0)

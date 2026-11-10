@@ -9,10 +9,10 @@
 
 #include <darlingserver/rpc.h>
 
-// x86Code: set by sys_settid (settid.c) while an identity assumed with settid() is in effect.
+// x86Sim: set by sys_settid (settid.c) while an identity assumed with settid() is in effect.
 volatile int __darling_settid_active = 0;
 
-// x86Code: as XNU's gettid(): a thread without an identity assumed through settid() (UT_SETUID) gets ESRCH and the
+// x86Sim: as XNU's gettid(): a thread without an identity assumed through settid() (UT_SETUID) gets ESRCH and the
 // pointers are not touched. Darling wrote through them unconditionally, so code calling syscall(SYS_gettid) the Linux
 // way (glog/folly in React Native's ReactNativeDependencies: x1 = junk) crashed the app with SIGSEGV on its first log.
 long sys_gettid(int* uid, int* gid)

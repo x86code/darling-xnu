@@ -1,4 +1,4 @@
-// x86Code (RAM 2): jetsam bands and dirty tracking, recorded for the Linux-side jetsam (cli/libexec/jetsam.py).
+// x86Sim (RAM 2): jetsam bands and dirty tracking, recorded for the Linux-side jetsam (cli/libexec/jetsam.py).
 //
 // A device's memorystatus keeps each process in a priority band: launchd puts a daemon's band in its spawn attributes
 // (posix_spawnattr_setjetsam_ext), RunningBoard moves apps and extensions between bands as they go foreground,
@@ -9,7 +9,7 @@
 // app in the background that RunningBoard never suspended (Maps) and every daemon a boot's launch events started
 // (Siri's, Wallet's, ~1 GB) stayed resident.
 //
-// Recorded per process as /private/var/run/x86code-jetsam/<pid> (rewritten at each change; mtime = when), one line:
+// Recorded per process as /private/var/run/x86sim-jetsam/<pid> (rewritten at each change; mtime = when), one line:
 //     <priority> <dirty flags> <user_data> <darwin bg> <darwin role>
 // priority -1 = never set; dirty flags = PROC_DIRTY_TRACKED|ALLOWS_IDLE_EXIT|IS_DIRTY as proc_get_dirty reports them;
 // darwin bg = 1 while RunningBoard has the process backgrounded (setpriority PRIO_DARWIN_PROCESS, PRIO_DARWIN_BG),
@@ -29,7 +29,7 @@
 #include <stdint.h>
 #include <sys/errno.h>
 
-#define JS_DIR "/private/var/run/x86code-jetsam"
+#define JS_DIR "/private/var/run/x86sim-jetsam"
 
 // proc_info.h (PRIVATE)
 #define DC_TRACK 1
@@ -108,7 +108,7 @@ static void js_write(int pid, const struct js_state* st)
 }
 
 // posix_spawn's child (attributes with POSIX_SPAWN_JETSAM_SET): the band launchd gave the job.
-void x86code_jetsam_spawned(int priority)
+void x86sim_jetsam_spawned(int priority)
 {
 	struct js_state st;
 	int pid = (int)sys_getpid();
@@ -117,12 +117,12 @@ void x86code_jetsam_spawned(int priority)
 	js_write(pid, &st);
 }
 
-// x86Code: memorystatus_control (440). Every command succeeds and queries report nothing (0 bytes), as before
+// x86Sim: memorystatus_control (440). Every command succeeds and queries report nothing (0 bytes), as before
 // (failing it made the user containermanagerd crash at startup); a band change is recorded.
 long sys_memorystatus_control(uint32_t command, int32_t pid, uint32_t flags, void* buffer, unsigned long size)
 {
 	if (command != 2)
-		x86code_unsupported("memorystatus_control", command); // census: answered 0 / nothing
+		x86sim_unsupported("memorystatus_control", command); // census: answered 0 / nothing
 	// Align 1: the simulator's kernel is macOS's, built without CONFIG_JETSAM: memorystatus_control
 	// (bsd/kern/kern_memorystatus.c) has no case for these there and fails them with EINVAL. RunningBoard asks
 	// CONVERT_MEMLIMIT_MB (28) for its processes' limits: the 0 we answered read as a 0 MB limit.
@@ -158,7 +158,7 @@ long sys_memorystatus_control(uint32_t command, int32_t pid, uint32_t flags, voi
 static int self_pid;
 static int self_dirty = -1;
 
-long x86code_dirtycontrol(int32_t pid, uint32_t flavor, uint64_t arg, void* buffer, int32_t bufsize)
+long x86sim_dirtycontrol(int32_t pid, uint32_t flavor, uint64_t arg, void* buffer, int32_t bufsize)
 {
 	struct js_state st;
 	int me = (int)sys_getpid();
@@ -204,7 +204,7 @@ long x86code_dirtycontrol(int32_t pid, uint32_t flavor, uint64_t arg, void* buff
 
 // setpriority(PRIO_DARWIN_PROCESS, pid, prio) (process/setpriority.c): RunningBoard backgrounds (PRIO_DARWIN_BG) and
 // foregrounds (0) the processes it manages.
-void x86code_jetsam_darwin_bg(int pid, int prio)
+void x86sim_jetsam_darwin_bg(int pid, int prio)
 {
 	struct js_state st;
 	if (pid <= 0)
@@ -219,7 +219,7 @@ void x86code_jetsam_darwin_bg(int pid, int prio)
 }
 
 // setpriority(PRIO_DARWIN_ROLE, pid, role): the task role RunningBoard gives an app (foreground, background, ...).
-void x86code_jetsam_darwin_role(int pid, int role)
+void x86sim_jetsam_darwin_role(int pid, int role)
 {
 	struct js_state st;
 	if (pid <= 0)
@@ -234,14 +234,14 @@ void x86code_jetsam_darwin_role(int pid, int role)
 
 // Align 1: syscalls the runtime makes that had no entry ("Unimplemented syscall", ENOSYS; census at boot).
 // quotactl (165, searchd): no volume here has quotas: ENOTSUP, as XNU's quotactl for a mount without them.
-long sys_x86code_quotactl(void)
+long sys_x86sim_quotactl(void)
 {
 	return -ENOTSUP;
 }
 
 // proc_rlimit_control (446, coreaudiod & co.): wakeup / CPU / footprint-interval monitors (bsd/kern/kern_resource.c).
 // Nothing monitors here: accepted (0), as XNU does for a valid flavor; an unknown flavor is EINVAL.
-long sys_x86code_proc_rlimit_control(int pid, int flavor, void* arg)
+long sys_x86sim_proc_rlimit_control(int pid, int flavor, void* arg)
 {
 	if (flavor < 0 || flavor > 7)
 		return -EINVAL;
@@ -249,14 +249,14 @@ long sys_x86code_proc_rlimit_control(int pid, int flavor, void* arg)
 }
 
 // telemetry (451, runningboardd): no telemetry subsystem: ENOTSUP (XNU without CONFIG_TELEMETRY).
-long sys_x86code_telemetry(void)
+long sys_x86sim_telemetry(void)
 {
 	return -ENOTSUP;
 }
 
 // thread_selfusage (482, searchd): the calling thread's CPU time in mach time units (XNU thread_get_runtime_self);
 // Darling's mach time is nanoseconds (CLOCK_MONOTONIC), so CLOCK_THREAD_CPUTIME_ID (3) in ns.
-uint64_t sys_x86code_thread_selfusage(void)
+uint64_t sys_x86sim_thread_selfusage(void)
 {
 	struct { long tv_sec; long tv_nsec; } ts;
 	if (LINUX_SYSCALL(__NR_clock_gettime, 3, &ts) < 0)

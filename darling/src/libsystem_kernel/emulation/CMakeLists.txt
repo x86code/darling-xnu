@@ -141,7 +141,7 @@ set(xnu_syscall_bsd_sources
 	src/xnu_syscall/bsd/impl/fcntl/openat.c
 	src/xnu_syscall/bsd/impl/guarded/change_fdguard_np.c
 	src/xnu_syscall/bsd/impl/guarded/guarded_close_np.c
-	src/xnu_syscall/bsd/impl/guarded/guarded_io_np.c # x86Code
+	src/xnu_syscall/bsd/impl/guarded/guarded_io_np.c # x86Sim
 	src/xnu_syscall/bsd/impl/guarded/guarded_kqueue_np.c
 	src/xnu_syscall/bsd/impl/guarded/guarded_open_np.c
 	src/xnu_syscall/bsd/impl/hfs/stub.c
@@ -155,8 +155,8 @@ set(xnu_syscall_bsd_sources
 	src/xnu_syscall/bsd/impl/misc/csops.c
 	src/xnu_syscall/bsd/impl/misc/csrctl.c
 	src/xnu_syscall/bsd/impl/misc/fileport_makefd.c
-	src/xnu_syscall/bsd/impl/misc/x86code_memfd.c # x86Code
-	src/xnu_syscall/bsd/impl/misc/x86code_inotify.c # x86Code
+	src/xnu_syscall/bsd/impl/misc/x86sim_memfd.c # x86Sim
+	src/xnu_syscall/bsd/impl/misc/x86sim_inotify.c # x86Sim
 	src/xnu_syscall/bsd/impl/misc/fileport_makeport.c
 	src/xnu_syscall/bsd/impl/misc/fsgetpath.c
 	src/xnu_syscall/bsd/impl/misc/getentropy.c
@@ -165,7 +165,7 @@ set(xnu_syscall_bsd_sources
 	src/xnu_syscall/bsd/impl/misc/getrlimit.c
 	src/xnu_syscall/bsd/impl/misc/getrusage.c
 	src/xnu_syscall/bsd/impl/misc/iopolicysys.c
-	src/xnu_syscall/bsd/impl/misc/fsctl.c # x86Code
+	src/xnu_syscall/bsd/impl/misc/fsctl.c # x86Sim
 	src/xnu_syscall/bsd/impl/misc/proc_info.c
 	src/xnu_syscall/bsd/impl/misc/mac_syscall.c
 	src/xnu_syscall/bsd/impl/misc/ptrace.c
@@ -176,7 +176,7 @@ set(xnu_syscall_bsd_sources
 	src/xnu_syscall/bsd/impl/misc/syscall.c
 	src/xnu_syscall/bsd/impl/misc/sysctl.c
 	src/xnu_syscall/bsd/impl/misc/thread_selfid.c
-	src/xnu_syscall/bsd/impl/misc/thread_selfcounts.c # x86Code
+	src/xnu_syscall/bsd/impl/misc/thread_selfcounts.c # x86Sim
 	src/xnu_syscall/bsd/impl/mman/madvise.c
 	src/xnu_syscall/bsd/impl/mman/mman.c
 	src/xnu_syscall/bsd/impl/mman/msync.c
@@ -268,7 +268,7 @@ set(xnu_syscall_bsd_sources
 	src/xnu_syscall/bsd/impl/unistd/fchmod.c
 	src/xnu_syscall/bsd/impl/unistd/fchmodat.c
 	src/xnu_syscall/bsd/impl/unistd/fchmod_extended.c
-	src/xnu_syscall/bsd/impl/unistd/access_extended.c # x86Code
+	src/xnu_syscall/bsd/impl/unistd/access_extended.c # x86Sim
 	src/xnu_syscall/bsd/impl/unistd/fchown.c
 	src/xnu_syscall/bsd/impl/unistd/fchownat.c
 	src/xnu_syscall/bsd/impl/unistd/fdatasync.c

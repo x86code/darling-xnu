@@ -5,7 +5,7 @@
 #include <darling/emulation/linux_premigration/linux-syscalls/linux.h>
 #include <darlingserver/rpc.h>
 
-// x86Code: see fileport_makeport.c
+// x86Sim: see fileport_makeport.c
 long sys_fileport_makefd(int port)
 {
 	int fd = -1;

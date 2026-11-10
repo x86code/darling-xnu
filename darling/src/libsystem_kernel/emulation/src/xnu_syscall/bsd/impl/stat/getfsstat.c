@@ -25,7 +25,7 @@ long sys_getfsstat(struct bsd_statfs* buf, int bufsize, int flags)
 #endif
 }
 
-// x86Code: whether some /proc/self/mounts mount point has st_dev dev.
+// x86Sim: whether some /proc/self/mounts mount point has st_dev dev.
 static int getfsstat_dev_is_mount(unsigned long long dev)
 {
 	struct simple_readline_buf rbuf;
@@ -82,13 +82,13 @@ long sys_getfsstat64(struct bsd_statfs64* buf, int bufsize, int flags)
 				continue;
 
 			strlcpy(buf[count].f_mntfromname, p, sizeof(buf[count].f_mntfromname));
-			statfs_short_mntfrom(buf[count].f_mntfromname, sizeof(buf[count].f_mntfromname)); // x86Code
+			statfs_short_mntfrom(buf[count].f_mntfromname, sizeof(buf[count].f_mntfromname)); // x86Sim
 
 			p = strtok_r(NULL, " ", &saveptr);
 			if (p == NULL)
 				continue;
 
-			// x86Code: unescape ("\\040") for the Linux statfs below; reported in the prefix view after it.
+			// x86Sim: unescape ("\\040") for the Linux statfs below; reported in the prefix view after it.
 			statfs_unescape_mount_path(p);
 			strlcpy(buf[count].f_mntonname, p, sizeof(buf[count].f_mntonname));
 
@@ -97,7 +97,7 @@ long sys_getfsstat64(struct bsd_statfs64* buf, int bufsize, int flags)
 				continue;
 
 			strlcpy(buf[count].f_fstypename, p, sizeof(buf[count].f_fstypename));
-			statfs_mac_fstypename(buf[count].f_fstypename, sizeof(buf[count].f_fstypename)); // x86Code
+			statfs_mac_fstypename(buf[count].f_fstypename, sizeof(buf[count].f_fstypename)); // x86Sim
 
 #ifdef __NR_statfs64
 			if (LINUX_SYSCALL2(__NR_statfs64, (char*)buf[count].f_mntonname, &lbuf) < 0)
@@ -108,7 +108,7 @@ long sys_getfsstat64(struct bsd_statfs64* buf, int bufsize, int flags)
 
 			statfs_linux_to_bsd64(&lbuf, &buf[count]);
 			{
-				// x86Code: f_fsid = { st_dev, 0 } as in statfs/fstatfs: CFURL finds a file's volume
+				// x86Sim: f_fsid = { st_dev, 0 } as in statfs/fstatfs: CFURL finds a file's volume
 				// (NSURLVolumeURLKey) by matching its fsid against this table.
 				struct linux_stat lst;
 				if (LINUX_SYSCALL(__NR_stat, (char*)buf[count].f_mntonname, &lst) == 0)
@@ -126,7 +126,7 @@ long sys_getfsstat64(struct bsd_statfs64* buf, int bufsize, int flags)
 
 	close_internal(fd);
 
-	// x86Code: then the unmounted subvolumes (statfs.c, statfs_subvol_root) the guest uses, so a
+	// x86Sim: then the unmounted subvolumes (statfs.c, statfs_subvol_root) the guest uses, so a
 	// file's fsid {st_dev,0} there matches an entry, with the f_mntonname statfs returns for it.
 	{
 		unsigned long long seen[17];

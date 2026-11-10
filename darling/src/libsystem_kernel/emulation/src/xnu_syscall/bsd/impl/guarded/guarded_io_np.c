@@ -1,4 +1,4 @@
-// x86Code: guarded_open_dprotected_np, guarded_write_np, guarded_pwrite_np and guarded_writev_np (BSD syscalls
+// x86Sim: guarded_open_dprotected_np, guarded_write_np, guarded_pwrite_np and guarded_writev_np (BSD syscalls
 // 484-487). SpotlightIndex (searchd) writes every index file through guarded_pwrite_np; with ENOSYS its first write
 // (indexState) failed, the index was never created ("Not fully created") and every CoreSpotlight query (Files and
 // Preview Recents, Spotlight search) failed with CSSearchQueryErrorDomain -2001. Darling enforces no guards (see

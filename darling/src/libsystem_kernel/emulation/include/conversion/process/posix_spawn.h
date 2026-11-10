@@ -24,7 +24,7 @@ struct xnu__posix_spawnattr
 	int psa_binprefs[4];
 	int psa_pcontrol;
 	int psa_apptype;
-	// x86Code (RAM 2): through the jetsam fields, as [xnu]/bsd/sys/spawn_internal.h (process/memorystatus.c)
+	// x86Sim (RAM 2): through the jetsam fields, as [xnu]/bsd/sys/spawn_internal.h (process/memorystatus.c)
 	uint64_t psa_cpumonitor_percent;
 	uint64_t psa_cpumonitor_interval;
 	uint64_t psa_reserved;

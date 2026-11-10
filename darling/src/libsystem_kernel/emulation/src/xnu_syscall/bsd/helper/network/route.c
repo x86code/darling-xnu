@@ -1,5 +1,5 @@
 #include <darling/emulation/xnu_syscall/bsd/helper/network/route.h>
-// x86Code: ported from willi/darling-xnu#7 (research/willi/darling-xnu-7.diff); see FINDINGS.md "Spike 3.8"
+// x86Sim: ported from willi/darling-xnu#7 (research/willi/darling-xnu-7.diff); see FINDINGS.md "Spike 3.8"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -31,7 +31,7 @@ extern void* memcpy(void* destination, const void* source, __SIZE_TYPE__ n);
 #define LINUX_AF_UNIX 1
 #define LINUX_SOCK_CLOEXEC 02000000
 #ifndef LINUX_SOCK_DGRAM
-#define LINUX_SOCK_DGRAM 2 // x86Code: not defined in this tree
+#define LINUX_SOCK_DGRAM 2 // x86Sim: not defined in this tree
 #endif
 #define LINUX_F_SETFD 2
 #define LINUX_SYS_SOCKETPAIR 8

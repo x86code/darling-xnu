@@ -8,7 +8,7 @@
 #include <darling/emulation/conversion/errno.h>
 #include <darling/emulation/conversion/duct_errno.h>
 #include <darling/emulation/linux_premigration/linux-syscalls/linux.h>
-#include <darling/emulation/common/sigsafe_lock.h> // x86Code
+#include <darling/emulation/common/sigsafe_lock.h> // x86Sim
 
 struct timespec
 {
@@ -16,7 +16,7 @@ struct timespec
 	long tv_nsec;
 };
 
-// x86Code: (ported from willi/darling-xnu#6) XNU's ulock_wait() returns how many other threads still wait on the
+// x86Sim: (ported from willi/darling-xnu#6) XNU's ulock_wait() returns how many other threads still wait on the
 // address; futex(FUTEX_WAIT) doesn't say, so the waiters are counted here, per address. Userspace relies on the count
 // both ways: os_unfair_lock keeps its waiters bit while it isn't 0, and pthread_dependency_wait_np() (and libdispatch's
 // thread events) crash on anything but 0 for their single waiter. The hashed buckets used before counted every
@@ -85,7 +85,7 @@ long sys_ulock_wait(uint32_t operation, void* addr, uint64_t value, uint32_t tim
 	return ulock_wait_ns(operation, addr, value, (uint64_t) timeout * 1000);
 }
 
-// x86Code: ulock_wait2 (BSD syscall 544): XNU's ulock_wait with a 64-bit timeout in nanoseconds (or, with
+// x86Sim: ulock_wait2 (BSD syscall 544): XNU's ulock_wait with a 64-bit timeout in nanoseconds (or, with
 // ULF_DEADLINE, a mach_absolute_time deadline). It was missing (ENOSYS); libdispatch uses it for every timed wait
 // (dispatch_group_wait/dispatch_semaphore_wait with a timeout, _dlock_wait) and crashes on an unexpected error:
 // "_dlock_wait.cold" SIGILL in Safari's WBSHistoryServiceStore load.
@@ -139,7 +139,7 @@ static long ulock_wait_ns(uint32_t operation, void* addr, uint64_t value, uint64
 	else
 		return -EINVAL;
 
-	// x86Code: returned verbatim to ULF_NO_ERRNO callers, which switch on the exact -errno; the libsyscall stubs
+	// x86Sim: returned verbatim to ULF_NO_ERRNO callers, which switch on the exact -errno; the libsyscall stubs
 	// pass it through for them (ported from VibeDarling/darling-xnu#15)
 	if (ret < 0)
 		ret = errno_linux_to_bsd(ret);

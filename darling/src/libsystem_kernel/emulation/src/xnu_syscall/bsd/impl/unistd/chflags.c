@@ -10,7 +10,7 @@
 #include <darling/emulation/xnu_syscall/bsd/helper/misc/bsdflags.h>
 
 
-// x86Code: the flags are kept in an extended attribute (helper/misc/bsdflags.h); this used to fail with ENOTSUP.
+// x86Sim: the flags are kept in an extended attribute (helper/misc/bsdflags.h); this used to fail with ENOTSUP.
 long sys_chflags(const char* file, int flags)
 {
 	struct vchroot_expand_args vc;
@@ -27,6 +27,6 @@ long sys_chflags(const char* file, int flags)
 		__simple_snprintf(buf, sizeof(buf), "/proc/self/fd/%d/%s", vc.dfd, vc.path);
 		p = buf;
 	}
-	r = x86code_bsdflags_set(p, (uint32_t) flags);
+	r = x86sim_bsdflags_set(p, (uint32_t) flags);
 	return r < 0 ? errno_linux_to_bsd(r) : 0;
 }

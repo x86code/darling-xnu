@@ -41,11 +41,11 @@ long sys_renameat(int oldfd, const char* oldpath, int newfd, const char* newpath
 	return 0;
 }
 
-// x86Code: renameatx_np (atomic swap / exclusive rename) via Linux renameat2
+// x86Sim: renameatx_np (atomic swap / exclusive rename) via Linux renameat2
 #define DARWIN_RENAME_SECLUDE 0x00000001
 #define DARWIN_RENAME_SWAP    0x00000002
 #define DARWIN_RENAME_EXCL    0x00000004
-// x86Code Speed 26: newer flags; searchd renames its index state with them and got ENOTSUP (Files: "Content
+// x86Sim Speed 26: newer flags; searchd renames its index state with them and got ENOTSUP (Files: "Content
 // Unavailable"). No symlink in the paths is followed (NOFOLLOW_ANY: the last component isn't, as rename never does);
 // RESOLVE_BENEATH and SECLUDE (a hint) don't change a rename inside the prefix.
 #define DARWIN_RENAME_NOFOLLOW_ANY    0x00000010

@@ -27,7 +27,7 @@
 extern int strcmp(const char *s1, const char *s2);
 extern char* strcpy(char* dst, const char* src);
 
-// x86Code: O_SYMLINK opens the object itself; on XNU that only differs from a plain open when the object is a
+// x86Sim: O_SYMLINK opens the object itself; on XNU that only differs from a plain open when the object is a
 // symlink. The O_PATH descriptor we need for a symlink can't be read, have its xattrs read (EBADF) and so on, so a
 // regular file or directory is reopened through /proc/self/fd with the access asked for (O_PATH kept if that
 // fails, e.g. EACCES or a directory opened for writing). FileProvider opens every item with O_SYMLINK

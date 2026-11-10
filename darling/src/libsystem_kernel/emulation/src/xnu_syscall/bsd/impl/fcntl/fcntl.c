@@ -62,7 +62,7 @@ static int cmd_bsd_to_linux(int bsd) {
 		case F_SETLKW: return LINUX_F_SETLKW;
 		case F_GETLK:  return LINUX_F_GETLK;
 		case F_DUPFD_CLOEXEC: return LINUX_F_DUPFD_CLOEXEC;
-		// x86Code: open file description locks. Apple's SQLite probes F_OFD_GETLK to pick its
+		// x86Sim: open file description locks. Apple's SQLite probes F_OFD_GETLK to pick its
 		// locking style; EINVAL made it fall back to dot-file locking (a <db>.lock directory),
 		// which goes stale when a process dies and then reports "database is locked" forever.
 		case 90: return 37; // F_OFD_SETLK  -> LINUX_F_OFD_SETLK
@@ -72,7 +72,7 @@ static int cmd_bsd_to_linux(int bsd) {
 	};
 };
 
-// x86Code: F_SETLKWTIMEOUT (10) / F_OFD_SETLKWTIMEOUT (93): F_SETLKW / F_OFD_SETLKW that give up
+// x86Sim: F_SETLKWTIMEOUT (10) / F_OFD_SETLKWTIMEOUT (93): F_SETLKW / F_OFD_SETLKW that give up
 // with ETIMEDOUT after a timeout (XNU lf_setlock). Linux has no timed locks: retry the
 // non-blocking F_SETLK / F_OFD_SETLK until the lock is granted or the timeout passes.
 // Apple's SQLite uses these whenever a busy timeout is set (unixFileLock, for the database
@@ -143,8 +143,8 @@ long sys_fcntl_nocancel(int fd, int cmd, long arg)
 	{
 		case F_CHECK_LV:
 			return 0;
-		case 10: // x86Code: F_SETLKWTIMEOUT
-		case 93: // x86Code: F_OFD_SETLKWTIMEOUT
+		case 10: // x86Sim: F_SETLKWTIMEOUT
+		case 93: // x86Sim: F_OFD_SETLKWTIMEOUT
 			return fcntl_lock_timeout(fd, cmd, (struct bsd_flocktimeout*) arg);
 		// No code signing enforcement: accept signature registration (dyld_sim needs F_ADDFILESIGS_FOR_DYLD_SIM)
 		case F_ADDFILESIGS:
@@ -164,7 +164,7 @@ long sys_fcntl_nocancel(int fd, int cmd, long arg)
 		case F_SETFL:
 			arg = oflags_bsd_to_linux(arg);
 			break;
-		// x86Code: data protection classes. Linux file systems have no data protection,
+		// x86Sim: data protection classes. Linux file systems have no data protection,
 		// which is class D (PROTECTION_CLASS_D, "no protection"): report it, accept sets.
 		case 63: // F_GETPROTECTIONCLASS
 			return 4;
@@ -181,18 +181,18 @@ long sys_fcntl_nocancel(int fd, int cmd, long arg)
 		case F_SETLK:
 		case F_SETLKW:
 		case F_GETLK:
-		case 90: case 91: case 92: { // x86Code: F_OFD_SETLK/SETLKW/GETLK
+		case 90: case 91: case 92: { // x86Sim: F_OFD_SETLK/SETLKW/GETLK
 			struct bsd_flock* bsd_struct = arg;
 			struct linux_flock* linux_struct = __builtin_alloca(sizeof(struct linux_flock));
 			linux_struct->l_type = flock_type_bsd_to_linux(bsd_struct->l_type);
 			linux_struct->l_whence = bsd_struct->l_whence;
 			linux_struct->l_start = bsd_struct->l_start;
 			linux_struct->l_len = bsd_struct->l_len;
-			// x86Code: Linux rejects OFD lock requests with a nonzero l_pid
+			// x86Sim: Linux rejects OFD lock requests with a nonzero l_pid
 			linux_struct->l_pid = (cmd >= 90) ? 0 : bsd_struct->l_pid;
 			arg = linux_struct;
 		} break;
-		// x86Code (Speed 27): F_PREALLOCATE (struct fstore): reserve space without changing the file's size, as
+		// x86Sim (Speed 27): F_PREALLOCATE (struct fstore): reserve space without changing the file's size, as
 		// Linux's fallocate(FALLOC_FL_KEEP_SIZE). It was EINVAL: Core ML's BNNS graph compiler ("failed to preallocate
 		// file") failed, so Spotlight's query parser couldn't load its model in time and Spotlight crashed on typing.
 		// A file system without fallocate gets XNU's answer for space it doesn't have to reserve: all of it.
@@ -228,7 +228,7 @@ long sys_fcntl_nocancel(int fd, int cmd, long arg)
 			fst->fst_bytesalloc = fst->fst_length;
 			return 0;
 		}
-		// x86Code (Speed 27): read-ahead and caching hints (XNU: per-file flags): Linux's page cache advice
+		// x86Sim (Speed 27): read-ahead and caching hints (XNU: per-file flags): Linux's page cache advice
 		case 45: // F_RDAHEAD
 			LINUX_SYSCALL(__NR_fadvise64, fd, 0, 0, arg ? 2 /* POSIX_FADV_SEQUENTIAL */ : 0 /* NORMAL */);
 			return 0;
@@ -297,7 +297,7 @@ long sys_fcntl_nocancel(int fd, int cmd, long arg)
 		case F_SETLK:
 		case F_SETLKW:
 		case F_GETLK:
-		case 90: case 91: case 92: { // x86Code: F_OFD_SETLK/SETLKW/GETLK
+		case 90: case 91: case 92: { // x86Sim: F_OFD_SETLK/SETLKW/GETLK
 			struct bsd_flock* bsd_struct = original_arg;
 			struct linux_flock* linux_struct = arg;
 			bsd_struct->l_type = flock_type_linux_to_bsd(linux_struct->l_type);

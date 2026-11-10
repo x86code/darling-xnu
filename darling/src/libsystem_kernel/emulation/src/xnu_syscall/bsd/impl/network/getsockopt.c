@@ -82,11 +82,11 @@ long sys_getsockopt(int fd, int level, int optname, void* optval, int* optlen)
 		ret = socket_nosigpipe_get(fd, &on);
 		return ret < 0 ? ret : int_option(on, optval, optlen);
 	}
-	// x86Code: willi/darling-xnu#25: TCP_INFO / TCP_CONNECTION_INFO from Linux's TCP_INFO
+	// x86Sim: willi/darling-xnu#25: TCP_INFO / TCP_CONNECTION_INFO from Linux's TCP_INFO
 	if (level == XNU_IPPROTO_TCP && (optname == BSD_TCP_INFO || optname == BSD_TCP_CONNECTION_INFO))
 		return tcp_info_option(fd, optname, optval, optlen);
 
-	// x86Code: IP_BOUND_IF / IPV6_BOUND_IF read back Linux's SO_BINDTOIFINDEX (setsockopt.c)
+	// x86Sim: IP_BOUND_IF / IPV6_BOUND_IF read back Linux's SO_BINDTOIFINDEX (setsockopt.c)
 	if ((level == 0 && optname == 25) || (level == 41 && optname == 125)) {
 		int ifindex = 0, len = sizeof(ifindex);
 #ifdef __NR_socketcall
@@ -98,7 +98,7 @@ long sys_getsockopt(int fd, int level, int optname, void* optval, int* optlen)
 		return ret < 0 ? errno_linux_to_bsd(ret) : int_option(ifindex, optval, optlen);
 	}
 
-	// x86Code: answered as XNU does (sockextra.h)
+	// x86Sim: answered as XNU does (sockextra.h)
 	if (level == BSD_SOL_SOCKET && optname == BSD_SO_CONNECTION_IDLE)
 		return sockextra_get_idle(fd, optval, optlen);
 	if (level == BSD_SOL_SOCKET && optname == BSD_SO_DEFUNCTOK)

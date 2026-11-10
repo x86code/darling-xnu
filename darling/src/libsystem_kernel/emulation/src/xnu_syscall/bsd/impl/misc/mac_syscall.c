@@ -1,4 +1,4 @@
-// x86Code: __mac_syscall (MAC policy calls: Sandbox, AMFI, ...). Darling has no MAC
+// x86Sim: __mac_syscall (MAC policy calls: Sandbox, AMFI, ...). Darling has no MAC
 // policies. Nothing is sandboxed, so sandbox_check() (Sandbox call 2) answers
 // "allowed" like XNU does for an unsandboxed process; ENOSYS made daemons such as
 // cfprefsd refuse clients. Other calls are logged once and fail with ENOSYS.
@@ -41,14 +41,14 @@ long sys___mac_syscall(const char* policy, int call, void* arg)
 	return -ENOSYS;
 }
 
-// x86Code: persona (494). There are no personas; a simulator process on a Mac gets
+// x86Sim: persona (494). There are no personas; a simulator process on a Mac gets
 // ESRCH from every persona call (kpersona_get, kpersona_pidinfo, ...), not ENOSYS.
 long sys_persona(uint32_t operation, uint32_t flags, void* info, void* id, void* idlen, char* path)
 {
 	return -ESRCH;
 }
 
-// x86Code: workloops with scheduling attributes (priority, policy, CPU percent). Workloops
+// x86Sim: workloops with scheduling attributes (priority, policy, CPU percent). Workloops
 // are emulated in kevent_qos.c on demand, so creating one succeeds and the attributes are
 // ignored. (ENOTSUP sends libdispatch to a fallback that drains the workloop on a plain
 // worker thread lacking the workloop thread state, crashing backboardd.)
@@ -61,4 +61,4 @@ long sys_kqueue_workloop_ctl(unsigned long cmd, uint64_t options, void* addr, un
 	return -EINVAL;
 }
 
-// x86Code: memorystatus_control (440) is in process/memorystatus.c (RAM 2: band changes are recorded for jetsam.py).
+// x86Sim: memorystatus_control (440) is in process/memorystatus.c (RAM 2: band changes are recorded for jetsam.py).

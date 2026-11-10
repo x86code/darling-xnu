@@ -29,7 +29,7 @@ long sys_sendto_nocancel(int fd, const void* buffer, unsigned long length,
 	struct sockaddr_fixup* fixed = NULL;
 	long route_ret;
 
-	// x86Code: PF_ROUTE sockets (willi/darling-xnu#7) are answered in the writer's thread
+	// x86Sim: PF_ROUTE sockets (willi/darling-xnu#7) are answered in the writer's thread
 	if (ROUTE_SOCKET_ACTIVE() && route_socket_write(fd, buffer, length, sockaddr != NULL, &route_ret))
 		return route_ret;
 
@@ -43,7 +43,7 @@ long sys_sendto_nocancel(int fd, const void* buffer, unsigned long length,
 			return ret;
 	}
 
-	// x86Code: willi/darling-xnu#8: Linux never raises SIGPIPE; XNU's is raised below unless SO_NOSIGPIPE/MSG_NOSIGNAL
+	// x86Sim: willi/darling-xnu#8: Linux never raises SIGPIPE; XNU's is raised below unless SO_NOSIGPIPE/MSG_NOSIGNAL
 	linux_flags = msgflags_bsd_to_linux(flags) | LINUX_MSG_NOSIGNAL;
 
 #ifdef __NR_socketcall

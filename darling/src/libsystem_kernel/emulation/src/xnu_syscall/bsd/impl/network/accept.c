@@ -35,7 +35,7 @@ long sys_accept_nocancel(int fd, void* from, int* socklen)
 		ret = errno_linux_to_bsd(ret);
 	else
 	{
-		// x86Code: accept(fd, NULL, NULL) is valid; the address fixup dereferenced NULL (crashed backboardd's simhid)
+		// x86Sim: accept(fd, NULL, NULL) is valid; the address fixup dereferenced NULL (crashed backboardd's simhid)
 		if (from && socklen) {
 			fixed = (struct sockaddr_fixup*) from;
 			fixed->bsd_family = sfamily_linux_to_bsd(fixed->linux_family);

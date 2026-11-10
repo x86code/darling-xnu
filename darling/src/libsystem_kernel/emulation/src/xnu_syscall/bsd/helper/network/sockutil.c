@@ -1,4 +1,4 @@
-// x86Code: ported from willi/darling-xnu#8 (research/willi/darling-xnu-8.diff); see FINDINGS.md "Spike 3.8"
+// x86Sim: ported from willi/darling-xnu#8 (research/willi/darling-xnu-8.diff); see FINDINGS.md "Spike 3.8"
 #include <darling/emulation/xnu_syscall/bsd/helper/network/sockutil.h>
 
 #include <darling/emulation/common/base.h>
@@ -31,7 +31,7 @@ long linux_tcp_info(int fd, struct linux_tcp_info* info)
 	unsigned int len = sizeof(*info);
 	long ret = linux_getsockopt(fd, LINUX_SOL_TCP, LINUX_TCP_INFO, info, &len);
 
-	// x86Code (Speed 27): Linux's tcp_get_info() reads the state without the socket's lock, so a read that races
+	// x86Sim (Speed 27): Linux's tcp_get_info() reads the state without the socket's lock, so a read that races
 	// connect() on another thread can see CLOSE with the SYN already counted (segs_out 1). That reads as a socket
 	// that was connected and is closed now (sostate.c: disconnected): libkqueue then kept a new socket's hang-up as
 	// EOF and Network.framework failed the connection "Network is down" (the first connection of mobileassetd,

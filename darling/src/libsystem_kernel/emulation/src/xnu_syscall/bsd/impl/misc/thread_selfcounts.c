@@ -1,4 +1,4 @@
-// x86Code: SYS_thread_selfcounts (186). SpringBoard / libmalloc poll this in a tight
+// x86Sim: SYS_thread_selfcounts (186). SpringBoard / libmalloc poll this in a tight
 // loop; Darling left the slot empty so every call printed "Unimplemented syscall (186)"
 // and returned -ENOSYS, burning a core and stalling UI presents. Type 1 writes
 // {instructions, cycles}; we approximate both with CLOCK_MONOTONIC nanoseconds so

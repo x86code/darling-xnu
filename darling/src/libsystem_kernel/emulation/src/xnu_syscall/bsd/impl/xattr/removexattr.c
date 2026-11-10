@@ -15,7 +15,7 @@ long sys_removexattr(const char* path, const char* name, int options)
 {
 	int ret;
 
-	// x86Code: resolve the path in Darling's virtual root like getxattr/listxattr do
+	// x86Sim: resolve the path in Darling's virtual root like getxattr/listxattr do
 	struct vchroot_expand_args vc;
 	vc.flags = (options & XATTR_NOFOLLOW) ? 0 : VCHROOT_FOLLOW;
 	vc.dfd = get_perthread_wd();

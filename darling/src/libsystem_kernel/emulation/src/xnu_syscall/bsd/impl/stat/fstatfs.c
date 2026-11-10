@@ -50,13 +50,13 @@ long sys_fstatfs64(int fd, struct bsd_statfs64* buf)
 	statfs_linux_to_bsd64(&lbuf, buf);
 	buf->f_iosize = 512;
 
-	// x86Code: f_fsid = { st_dev, 0 } as in statfs (matches getattrlist's ATTR_CMN_FSID).
+	// x86Sim: f_fsid = { st_dev, 0 } as in statfs (matches getattrlist's ATTR_CMN_FSID).
 	if (LINUX_SYSCALL(__NR_fstat, fd, &lst) == 0)
 		buf->f_fsid = (unsigned int) lst.st_dev;
 	else
 		lst.st_dev = 0;
 
-	// x86Code: match the mount table against the Linux path of the fd (fdpath() returns the
+	// x86Sim: match the mount table against the Linux path of the fd (fdpath() returns the
 	// prefix view, which never matched mounts outside the prefix), then report the mount
 	// point in the prefix view (statfs_fill_mount_info).
 	sprintf(procpath, "/proc/self/fd/%d", fd);

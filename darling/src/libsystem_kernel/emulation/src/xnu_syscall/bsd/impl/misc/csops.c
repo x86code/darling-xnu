@@ -12,7 +12,7 @@
 #include <darlingserver/rpc.h>
 
 /*
- * x86Code: csops / csops_audittoken backed by the target's code signature.
+ * x86Sim: csops / csops_audittoken backed by the target's code signature.
  *
  * Darling has no code signing; this used to return empty data for everything, so
  * every process looked unsigned and without entitlements. iOS daemons decide what a
@@ -327,7 +327,7 @@ static long copy_cd_string(const uint8_t* sig, uint32_t size, int team, void* us
 #define CSF_PLATFORM_BINARY      0x04000000
 #define CSF_PLATFORM_PATH        0x08000000
 
-// x86Code: is the path inside a simulator runtime ("/RuntimeRoot/")?
+// x86Sim: is the path inside a simulator runtime ("/RuntimeRoot/")?
 static int in_runtime_root(const char* path)
 {
 	static const char needle[] = "/RuntimeRoot/";
@@ -353,7 +353,7 @@ static uint32_t status_for(int pid)
 	if (lr < 0 || sig == NULL)
 	{
 		/*
-		 * x86Code: the simulator runtime's binaries carry no code signature (entitlements
+		 * x86Sim: the simulator runtime's binaries carry no code signature (entitlements
 		 * sit in __TEXT,__entitlements), yet on a Mac they run as platform binaries
 		 * (launchctl procinfo of SpringBoard: valid, kill, platform dyld, entitlements
 		 * validated, platform binary). RunningBoard strips restricted entitlements of
@@ -377,11 +377,11 @@ static uint32_t status_for(int pid)
 	cd = find_slot(sig, sigsize, CSSLOT_CODEDIRECTORY, &cdlen);
 	char rpath[1024];
 	uint64_t rfull = 0;
-	// x86Code: simulator runtime binaries are ad-hoc signed without the platform field, yet run as
+	// x86Sim: simulator runtime binaries are ad-hoc signed without the platform field, yet run as
 	// platform binaries on a Mac (see the unsigned case above)
 	if ((cd != NULL && cdlen > 38 && cd[38] != 0) // CS_CodeDirectory.platform
 		|| (dserver_rpc_get_executable_path(pid, rpath, sizeof(rpath), &rfull) == 0 && in_runtime_root(rpath)))
-		// x86Code: not CS_PLATFORM_PATH (a real simulator's SpringBoard has only "platform binary",
+		// x86Sim: not CS_PLATFORM_PATH (a real simulator's SpringBoard has only "platform binary",
 		// launchctl procinfo): RunningBoard strips restricted entitlements (primitiveattribute, ...)
 		// unless (status & (PLATFORM_PATH|PLATFORM_BINARY|VALID)) == PLATFORM_BINARY|VALID, so
 		// SpringBoard could not launch WidgetRenderer_Default (widgets stayed "Waiting...")

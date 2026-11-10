@@ -29,7 +29,7 @@ static struct SavedRef g_savedRefs[200];
 static int g_nextSavedRef = 0, g_nextGen = 0;
 static os_unfair_lock g_savedRefLock = OS_UNFAIR_LOCK_INIT;
 
-// x86Code: libsystem_kernel must not export os_unfair_lock_{lock,unlock}: its weak
+// x86Sim: libsystem_kernel must not export os_unfair_lock_{lock,unlock}: its weak
 // stubs shadowed libsystem_platform's real locks for foreign libSystems (iOS simulator).
 // Use libsimple's lock here instead (same 32-bit, zero-initialised layout).
 #include <libsimple/lock.h>

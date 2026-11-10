@@ -81,7 +81,7 @@ long sys_sendmsg_nocancel(int socket, const struct bsd_msghdr* msg, int flags)
 
 	lmsg.msg_flags = 0; // ignored
 
-	// x86Code: willi/darling-xnu#8: Linux never raises SIGPIPE; XNU's is raised below unless SO_NOSIGPIPE/MSG_NOSIGNAL
+	// x86Sim: willi/darling-xnu#8: Linux never raises SIGPIPE; XNU's is raised below unless SO_NOSIGPIPE/MSG_NOSIGNAL
 	linux_flags = msgflags_bsd_to_linux(flags) | LINUX_MSG_NOSIGNAL;
 
 #ifdef __NR_socketcall

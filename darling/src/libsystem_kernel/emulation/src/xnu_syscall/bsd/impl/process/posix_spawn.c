@@ -44,10 +44,10 @@
 
 extern _libkernel_functions_t _libkernel_functions;
 
-int darling_in_spawn_child = 0; // x86Code: see foreign_hook.h
+int darling_in_spawn_child = 0; // x86Sim: see foreign_hook.h
 
 /*
- * x86Code: port actions (posix_spawnattr_setspecialport_np, ..._set_registered_ports_np).
+ * x86Sim: port actions (posix_spawnattr_setspecialport_np, ..._set_registered_ports_np).
  * xpcproxy_sim hands a job its bootstrap port this way. Port names do not survive
  * fork(), but special ports are inherited, so for a real spawn the parent installs
  * the requested special ports on itself around the fork and then restores its own.
@@ -75,7 +75,7 @@ struct spawn_port_action
 	int which;
 };
 
-void x86code_jetsam_spawned(int priority); // x86Code: process/memorystatus.c
+void x86sim_jetsam_spawned(int priority); // x86Sim: process/memorystatus.c
 
 struct spawn_port_actions
 {
@@ -186,16 +186,16 @@ long sys_posix_spawn(int* pid, const char* path, const struct _posix_spawn_args_
 		if (darling_libkernel_functions_present())
 			_libkernel_functions->posix_spawn_child();
 
-		// x86Code: this exec completes the spawn; darlingserver must not report it as NOTE_EXEC
+		// x86Sim: this exec completes the spawn; darlingserver must not report it as NOTE_EXEC
 		// (on macOS it happens before posix_spawn returns, so no one can observe it)
 		dserver_rpc_spawn_exec();
 
 no_fork:
 		if (desc && desc->attrp)
 		{
-			// x86Code (RAM 2): the jetsam band launchd gave the job (process/memorystatus.c, for jetsam.py)
+			// x86Sim (RAM 2): the jetsam band launchd gave the job (process/memorystatus.c, for jetsam.py)
 			if (desc->attrp->psa_jetsam_flags & XNU_POSIX_SPAWN_JETSAM_SET)
-				x86code_jetsam_spawned(desc->attrp->psa_priority);
+				x86sim_jetsam_spawned(desc->attrp->psa_priority);
 			if (desc->attrp->psa_flags & POSIX_SPAWN_RESETIDS)
 			{
 				sys_setgid(sys_getgid());

@@ -1,4 +1,4 @@
-// x86Code: ported from willi/darling-xnu#25 (research/willi/darling-xnu-25.diff); see FINDINGS.md "Spike 3.8"
+// x86Sim: ported from willi/darling-xnu#25 (research/willi/darling-xnu-25.diff); see FINDINGS.md "Spike 3.8"
 #include <darling/emulation/xnu_syscall/bsd/helper/network/tcpinfo.h>
 
 #include <stddef.h>

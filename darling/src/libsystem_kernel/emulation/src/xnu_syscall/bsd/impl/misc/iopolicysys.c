@@ -10,7 +10,7 @@
 #include <darling/emulation/conversion/errno.h>
 
 /*
- * x86Code: iopolicysys (322) keeps the policies it is given, per process and per thread, and GET returns them.
+ * x86Sim: iopolicysys (322) keeps the policies it is given, per process and per thread, and GET returns them.
  * It used to return 0 without filling anything in, so getiopolicy_np() read back an uninitialized value.
  * NSFileCoordinator sets IOPOL_TYPE_VFS_MATERIALIZE_DATALESS_FILES to OFF for its thread around an accessor and
  * asserts that GET then says OFF ("materializationOffState == IOPOL_MATERIALIZE_DATALESS_FILES_OFF",

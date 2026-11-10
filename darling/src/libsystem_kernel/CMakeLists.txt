@@ -33,7 +33,7 @@ add_definitions(-DPRIVATE=1)
 
 add_subdirectory(libsyscall)
 
-# x86Code: newer interfaces expected by the iOS 26 simulator runtime (shared library only)
+# x86Sim: newer interfaces expected by the iOS 26 simulator runtime (shared library only)
 add_darling_object_library(simcompat simcompat/simcompat.c)
 
 set(DYLIB_INSTALL_NAME "/usr/lib/system/libsystem_kernel.dylib")

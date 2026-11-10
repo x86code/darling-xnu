@@ -46,7 +46,7 @@ kern_return_t _kernelrpc_mach_port_unguard_trap_impl(mach_port_name_t target, ma
 kern_return_t _kernelrpc_mach_vm_allocate_trap_impl(mach_port_name_t target, mach_vm_offset_t *addr, mach_vm_size_t size, int flags);
 kern_return_t _kernelrpc_mach_vm_deallocate_trap_impl(mach_port_name_t target, mach_vm_address_t address, mach_vm_size_t size);
 kern_return_t _kernelrpc_mach_vm_map_trap_impl(mach_port_name_t target, mach_vm_offset_t *address, mach_vm_size_t size, mach_vm_offset_t mask, int flags, vm_prot_t cur_protection);
-kern_return_t _kernelrpc_mach_vm_purgable_control_trap_impl(mach_port_name_t target, mach_vm_offset_t address, int control, int* state); // x86Code
+kern_return_t _kernelrpc_mach_vm_purgable_control_trap_impl(mach_port_name_t target, mach_vm_offset_t address, int control, int* state); // x86Sim
 kern_return_t _kernelrpc_mach_vm_protect_trap_impl(mach_port_name_t target, mach_vm_address_t address, mach_vm_size_t size, boolean_t set_maximum, vm_prot_t new_protection);
 
 kern_return_t macx_backing_store_recovery_impl(int pid);

@@ -30,7 +30,7 @@ long sys_statfs(const char* path, struct bsd_statfs* buf)
 #endif
 }
 
-// x86Code: shared by statfs/fstatfs/getfsstat. /proc/self/mounts lists Linux paths (octal-escaped,
+// x86Sim: shared by statfs/fstatfs/getfsstat. /proc/self/mounts lists Linux paths (octal-escaped,
 // e.g. "\040" for a space); Darling programs need them in the prefix view, as other syscalls see
 // them ("/home" is "/Volumes/SystemRoot/home"). Before, f_mntonname was the Linux path, so the
 // mount point did not exist for the caller: CFURL's NSURLVolumeURLKey failed, LaunchServices'
@@ -63,7 +63,7 @@ void statfs_mount_path_to_darling(const char* linux_path, char* out, unsigned lo
 }
 
 
-// x86Code: Darwin's mount sources are short BSD names ("/dev/disk3s5"); Linux's can be long device-mapper links
+// x86Sim: Darwin's mount sources are short BSD names ("/dev/disk3s5"); Linux's can be long device-mapper links
 // ("/dev/mapper/luks-<uuid>", 53 characters). CacheDelete keeps a 32-byte BSD name and refused such a volume
 // ("bsd_name_len (32) too short for ..."). A /dev/ source that is a symlink is reported as the device it names
 // ("/dev/dm-0"), the kernel's own name for it.
@@ -94,7 +94,7 @@ void statfs_short_mntfrom(char* name, __SIZE_TYPE__ size)
 }
 
 
-// x86Code: the type name of a local disk file system as a Mac reports it. The iOS simulator only runs on APFS, and
+// x86Sim: the type name of a local disk file system as a Mac reports it. The iOS simulator only runs on APFS, and
 // code checks: FileProvider's FPVolumeFPFSSupported() takes a volume only when f_fstypename is "apfs"
 // ("Non-eligible device ...: non-apfs"), so fileproviderd had no volume for the device's data, every provider
 // (On My iPhone, Photos, iCloud Drive) stayed disabled and a domain without a volume asserted ("FPDDomain must have
@@ -111,7 +111,7 @@ void statfs_mac_fstypename(char* name, __SIZE_TYPE__ size)
 	}
 }
 
-// x86Code: btrfs subvolumes (and other st_dev changes) that are not mount points. A subvolume reached
+// x86Sim: btrfs subvolumes (and other st_dev changes) that are not mount points. A subvolume reached
 // through its parent ("/srv/projects" under the "/" mount) has its own st_dev but no /proc/self/mounts
 // line, so its files' fsid {st_dev,0} (stat, getattrlist ATTR_CMN_FSID) matched no getfsstat entry:
 // CFURL's NSURLVolumeURLKey failed and lsd registered no apps (-43, as in FINDINGS "lsd registration
@@ -247,14 +247,14 @@ void statfs_fill_mount_info(const char* linux_path, unsigned long long dev, stru
 		strlcpy(best, mnton, sizeof(best));
 		statfs_mount_path_to_darling(mnton, buf->f_mntonname, sizeof(buf->f_mntonname));
 		strlcpy(buf->f_fstypename, fstype, sizeof(buf->f_fstypename));
-		statfs_mac_fstypename(buf->f_fstypename, sizeof(buf->f_fstypename)); // x86Code
+		statfs_mac_fstypename(buf->f_fstypename, sizeof(buf->f_fstypename)); // x86Sim
 		strlcpy(buf->f_mntfromname, mntfrom, sizeof(buf->f_mntfromname));
-		statfs_short_mntfrom(buf->f_mntfromname, sizeof(buf->f_mntfromname)); // x86Code
+		statfs_short_mntfrom(buf->f_mntfromname, sizeof(buf->f_mntfromname)); // x86Sim
 	}
 
 	close_internal(fd);
 
-	// x86Code: linux_path is on a file system the mount point is not (unmounted btrfs subvolume).
+	// x86Sim: linux_path is on a file system the mount point is not (unmounted btrfs subvolume).
 	if (dev != 0 && max_len >= 0)
 	{
 		struct linux_stat mst;
@@ -275,7 +275,7 @@ long sys_statfs64(const char* path, struct bsd_statfs64* buf)
 	struct linux_stat lst;
 
 	struct vchroot_expand_args vc;
-	// x86Code: statfs follows symlinks; resolve them in the prefix view, not Linux's.
+	// x86Sim: statfs follows symlinks; resolve them in the prefix view, not Linux's.
 	vc.flags = VCHROOT_FOLLOW;
 	vc.dfd = get_perthread_wd();
 
@@ -295,7 +295,7 @@ long sys_statfs64(const char* path, struct bsd_statfs64* buf)
 
 	statfs_linux_to_bsd64(&lbuf, buf);
 
-	// x86Code: f_fsid = { st_dev, 0 } as on Darwin, matching ATTR_CMN_FSID/ATTR_CMN_DEVID from
+	// x86Sim: f_fsid = { st_dev, 0 } as on Darwin, matching ATTR_CMN_FSID/ATTR_CMN_DEVID from
 	// getattrlist (callers compare them, and pass the fsid to fsgetpath/openbyid_np).
 	if (LINUX_SYSCALL(__NR_stat, vc.path, &lst) == 0)
 		buf->f_fsid = (unsigned int) lst.st_dev;

@@ -33,16 +33,16 @@ static bool use_per_thread_driver_fd = false;
 extern void _xtrace_postfork_child(void);
 
 #ifndef VARIANT_DYLD
-// x86Code: set by __libkernel_init in an arm64 iOS-simulator process (host/arm64host, which mldr runs in place of an
-// arm64-only Mach-O; X86CODE_A64_EXE in the environment). Its guest libdispatch and friends call this native
+// x86Sim: set by __libkernel_init in an arm64 iOS-simulator process (host/arm64host, which mldr runs in place of an
+// arm64-only Mach-O; X86SIM_A64_EXE in the environment). Its guest libdispatch and friends call this native
 // libsystem_kernel/pthread through the JIT's thunks, so it needs what a foreign libSystem gets (kevent workqueues,
 // workloops, the simulator host kernel version).
-bool darling_x86code_arm64;
+bool darling_x86sim_arm64;
 
 // True when libSystem is not Darling's (e.g. an iOS simulator runtime's)
 bool darling_foreign_libsystem(void)
 {
-	return darling_x86code_arm64 || (_libkernel_functions != NULL && !darling_libkernel_functions_present());
+	return darling_x86sim_arm64 || (_libkernel_functions != NULL && !darling_libkernel_functions_present());
 }
 
 // For a foreign libSystem, find a hook that Darling's libSystem would have

@@ -10,7 +10,7 @@
 
 #include <darlingserver/rpc.h>
 
-// x86Code: set (never cleared) by sys_pthread_markcancel. Every cancellation point (read, open, close, ... see
+// x86Sim: set (never cleared) by sys_pthread_markcancel. Every cancellation point (read, open, close, ... see
 // CANCELATION_POINT) asks whether the calling thread was canceled, and each answer was a darlingserver RPC (installd
 // made ~7,600 a second after boot). A thread is only ever marked through __pthread_markcancel, which libpthread
 // calls on threads of its own process (pthread_cancel, _pthread_markcancel_if_canceled), so while no thread of this

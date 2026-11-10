@@ -1,5 +1,5 @@
 #include <sys/errno.h>
-#include <darling/emulation/xnu_syscall/bsd/impl/misc/x86code_memfd.h>
+#include <darling/emulation/xnu_syscall/bsd/impl/misc/x86sim_memfd.h>
 
 #include <darling/emulation/common/base.h>
 #include <darling/emulation/conversion/errno.h>
@@ -8,9 +8,9 @@
 #include <darling/emulation/linux_premigration/linux-syscalls/linux.h>
 #include <string.h>
 
-// x86Code: Darling-private syscall 598 (unused by XNU): Linux inotify for simulator processes. On a Mac,
+// x86Sim: Darling-private syscall 598 (unused by XNU): Linux inotify for simulator processes. On a Mac,
 // fseventsd reads the kernel's /dev/fsevents and serves com.apple.FSEvents to every FSEvents client; the iOS
-// simulator's FSEvents.framework talks to the host's fseventsd. Our stand-in (x86code host/fseventsd, a simulator
+// simulator's FSEvents.framework talks to the host's fseventsd. Our stand-in (x86sim host/fseventsd, a simulator
 // job) needs file names of changes, which kqueue vnode filters don't give, so it watches with inotify. Simulator
 // processes link the runtime's libsystem_kernel, which has no way to reach Darling's __linux_inotify_* exports;
 // this syscall is that way. Paths are Darling paths (vchroot-expanded here); the inotify fd is a plain Linux fd
@@ -18,7 +18,7 @@
 //   op 0: inotify_init1(a1 = Linux flags)          -> fd
 //   op 1: inotify_add_watch(a1 = fd, a2 = path, a3 = Linux mask) -> watch descriptor
 //   op 2: inotify_rm_watch(a1 = fd, a2 = wd)       -> 0
-long sys_x86code_inotify(uint32_t op, uint64_t a1, uint64_t a2, uint64_t a3)
+long sys_x86sim_inotify(uint32_t op, uint64_t a1, uint64_t a2, uint64_t a3)
 {
 	long rv;
 	switch (op)

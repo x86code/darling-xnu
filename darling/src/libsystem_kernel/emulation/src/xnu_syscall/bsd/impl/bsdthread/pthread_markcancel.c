@@ -8,7 +8,7 @@
 
 #include <darlingserver/rpc.h>
 
-extern int __darling_cancel_marked;   // x86Code: see sys_pthread_canceled
+extern int __darling_cancel_marked;   // x86Sim: see sys_pthread_canceled
 
 long sys_pthread_markcancel(unsigned int thread_port)
 {

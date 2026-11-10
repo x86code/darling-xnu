@@ -10,7 +10,7 @@
 #include <darling/emulation/xnu_syscall/bsd/impl/unistd/getuid.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/unistd/getgid.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/fcntl/open.h>
-extern int strncmp(const char* s1, const char* s2, __SIZE_TYPE__ n); // x86Code
+extern int strncmp(const char* s1, const char* s2, __SIZE_TYPE__ n); // x86Sim
 #include <darling/emulation/common/simple.h>
 #include <darling/emulation/conversion/dirent/getdirentries.h>
 #include <darling/emulation/conversion/fcntl/open.h>
@@ -142,7 +142,7 @@ bool read_string(const char* path, char* dst, int maxlen)
 }
 
 /*
- * x86Code: every Darling process is "mldr" to Linux (/proc/<pid>/comm and stat), so proc_name(), proc_pidinfo's
+ * x86Sim: every Darling process is "mldr" to Linux (/proc/<pid>/comm and stat), so proc_name(), proc_pidinfo's
  * pbi_comm/pbi_name and KERN_PROC's p_comm all said "mldr", where XNU has the executable's name. Darwin code checks
  * it: FrontBoardServices' -[FBSOpenApplicationService openApplication:withOptions:clientHandle:completion:] asserts
  * [NSProcessInfo processInfo].processName is "lsd" (lsd aborted on every openURL: "what part about
@@ -247,7 +247,7 @@ static struct kinfo_proc_chain* load_proc(const char* name, int what, int flag)
 	// comm
 	READELEM();
 	strncpy(kinfo->kinfo.kp_proc.p_comm, elem, sizeof(kinfo->kinfo.kp_proc.p_comm));
-	darling_proc_name(kinfo->kinfo.kp_proc.p_pid, elem, kinfo->kinfo.kp_proc.p_comm, sizeof(kinfo->kinfo.kp_proc.p_comm)); // x86Code
+	darling_proc_name(kinfo->kinfo.kp_proc.p_pid, elem, kinfo->kinfo.kp_proc.p_comm, sizeof(kinfo->kinfo.kp_proc.p_comm)); // x86Sim
 
 	// process state
 	READELEM();

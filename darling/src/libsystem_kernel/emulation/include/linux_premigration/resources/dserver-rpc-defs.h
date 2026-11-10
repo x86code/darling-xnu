@@ -85,7 +85,7 @@ static long int dserver_rpc_hooks_send_message(int socket, const dserver_rpc_hoo
 
 static long int dserver_rpc_hooks_receive_message(int socket, dserver_rpc_hooks_msghdr_t* out_message) {
 	long int ret = 0;
-	// x86Code: recvmsg overwrites msg_controllen with what it received. After an S2C call without an FD (munmap,
+	// x86Sim: recvmsg overwrites msg_controllen with what it received. After an S2C call without an FD (munmap,
 	// msync, ...) it was 0, so the FD of a following S2C mmap in the same RPC was truncated away (MSG_CTRUNC) and
 	// "Bad S2C call: no FD, but expected one" aborted the process. Restore it before every receive.
 	const size_t controllen = out_message->msg_controllen;
@@ -285,7 +285,7 @@ __attribute__((format(printf, 1, 2)))
 void __dserver_rpc_hooks_printf(const char* format, ...);
 #define dserver_rpc_hooks_printf __dserver_rpc_hooks_printf
 
-// x86Code: ported from willi/darling-xnu#26 (Safari's main thread hung in a nested S2C interrupt_enter).
+// x86Sim: ported from willi/darling-xnu#26 (Safari's main thread hung in a nested S2C interrupt_enter).
 // The Linux mask, whole: a BSD sigset_t has no room for the real-time signals, darlingserver's two among them. Saved and
 // restored through sys_sigprocmask(), the mask lost their bits, which unblocked them inside their own handlers after the
 // first call: the S2C handler's sa_mask blocks both (34 and 35), the suspend handler's blocks 34, leaving 35 open on

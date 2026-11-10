@@ -32,7 +32,7 @@ static long kevent_qos_workq_async(const struct kevent_qos_s* changelist, int nc
 		struct kevent_qos_s* eventlist, int nevents, unsigned int flags);
 #endif
 
-// x86Code: NOTE_WL_SYNC_IPC knotes (dispatch's sync IPC handoff) only lend the waiter's
+// x86Sim: NOTE_WL_SYNC_IPC knotes (dispatch's sync IPC handoff) only lend the waiter's
 // priority to the servicer of a Mach port; there is no priority inheritance here, so they
 // are accepted and ignored (failing them makes libdispatch crash)
 static int is_sync_ipc(const struct kevent_qos_s* ch)
@@ -167,7 +167,7 @@ void kevent_64_to_qos(const struct kevent64_s* ev64, struct kevent_qos_s *ev)
  *   thread passes back with WQOPS_THREAD_KEVENT_RETURN (re-arming etc.) are
  *   applied before waiting again.
  *
- * Batches run in parallel, as XNU runs them (x86Code, Input 3: see wq_deliver).
+ * Batches run in parallel, as XNU runs them (x86Sim, Input 3: see wq_deliver).
  */
 
 #define WQ_KEVENT_BATCH 16
@@ -197,7 +197,7 @@ struct wq_knote_qos
 };
 static struct wq_knote_qos wq_qos_table[WQ_QOS_TABLE_SIZE];
 static libsimple_lock_t wq_qos_lock = LIBSIMPLE_LOCK_INITIALIZER;
-// x86Code: set once a knote could not be recorded; from then on liveness is unknown
+// x86Sim: set once a knote could not be recorded; from then on liveness is unknown
 static bool wq_qos_overflow;
 
 static struct wq_knote_qos* wq_qos_find_locked(uint64_t ident, int16_t filter, uint64_t udata)
@@ -229,7 +229,7 @@ static void wq_qos_record(const struct kevent_qos_s* ch, uint64_t workloop)
 
 	if (ch->flags & EV_DELETE)
 	{
-		// x86Code: see wq_apply_changes: only called once the delete took effect
+		// x86Sim: see wq_apply_changes: only called once the delete took effect
 		if (e != NULL)
 			e->used = false;
 	}
@@ -263,7 +263,7 @@ static void wq_qos_record(const struct kevent_qos_s* ch, uint64_t workloop)
 }
 
 /*
- * x86Code: is the knote an event was copied out for still registered? The manager thread
+ * x86Sim: is the knote an event was copied out for still registered? The manager thread
  * copies events out of libkqueue (for Mach ports that is when darlingserver hands over the
  * message, or a fake EV_VANISHED once the receive right is destroyed) and only then queues
  * them for a servicer. A knote deleted in between must not get the event: XNU drops a
@@ -328,7 +328,7 @@ static int wq_apply_changes(const struct kevent_qos_s* changelist, int nchanges,
 		ch64[i].flags |= EV_RECEIPT;
 	}
 	nr = sys_kevent64(default_kq, ch64, nchanges, rc, nchanges, 0, &zero);
-	// x86Code: a knote stays live until its delete succeeds (or it is not there at all): a
+	// x86Sim: a knote stays live until its delete succeeds (or it is not there at all): a
 	// deferred delete (EINPROGRESS) still has its in-flight event to deliver
 	for (i = 0; i < nchanges; i++)
 	{
@@ -342,7 +342,7 @@ static int wq_apply_changes(const struct kevent_qos_s* changelist, int nchanges,
 	return receipts == NULL && nr > 0 ? 0 : nr;
 }
 
-// x86Code (Input 3): batches run asynchronously. The manager handed a batch to a workqueue thread and waited for it
+// x86Sim (Input 3): batches run asynchronously. The manager handed a batch to a workqueue thread and waited for it
 // to return before it looked at the kqueue again, so while one kevent thread's handler blocked, no other event of the
 // process was delivered. A handler that blocks on something only another event brings deadlocked the process: an
 // iPad SpringBoard's kevent thread waited in a dispatch_sync on a workloop whose servicer was rendering a killed
@@ -401,7 +401,7 @@ static void wq_deliver(struct kevent_qos_s* events, int n, int priority)
 	libsimple_lock_unlock(&wq_batch_lock);
 
 	for (i = 0; i < n; i++)
-		if (wq_knote_live(&events[i])) // x86Code: deleted meanwhile (see wq_knote_live_locked)
+		if (wq_knote_live(&events[i])) // x86Sim: deleted meanwhile (see wq_knote_live_locked)
 			slot->events[m++] = events[i];
 	if (m == 0)
 	{
@@ -427,21 +427,21 @@ extern long sys_open(const char* filename, int flags, unsigned int mode);
 extern long sys_getpid(void);
 extern void __simple_fprintf(int fd, const char* format, ...);
 
-// x86Code (debug): if /private/var/tmp/x86code-wqdbg exists, the manager logs the events it receives to
-// /private/tmp/x86code-wqmgr.<pid>.log: the first 300, then one in 20000 (finds a knote that fires nonstop)
+// x86Sim (debug): if /private/var/tmp/x86sim-wqdbg exists, the manager logs the events it receives to
+// /private/tmp/x86sim-wqmgr.<pid>.log: the first 300, then one in 20000 (finds a knote that fires nonstop)
 static int wq_dbg_fd = -2;
 static unsigned long wq_dbg_n;
 static void wq_dbg_event(const struct kevent64_s* ev, bool live, uint32_t qos, uint64_t workloop)
 {
 	if (wq_dbg_fd == -2)
 	{
-		int probe = sys_open("/private/var/tmp/x86code-wqdbg", O_RDONLY, 0);
+		int probe = sys_open("/private/var/tmp/x86sim-wqdbg", O_RDONLY, 0);
 		wq_dbg_fd = -1;
 		if (probe >= 0)
 		{
 			char path[64];
 			close_internal(probe);
-			__simple_sprintf(path, "/private/tmp/x86code-wqmgr.%d.log", (int) sys_getpid());
+			__simple_sprintf(path, "/private/tmp/x86sim-wqmgr.%d.log", (int) sys_getpid());
 			wq_dbg_fd = sys_open(path, O_WRONLY | O_CREAT | O_APPEND, 0644);
 		}
 	}
@@ -483,7 +483,7 @@ static void* wq_kevent_manager(void* unused)
 			struct kevent_qos_s ev;
 			uint64_t workloop;
 			kevent_64_to_qos(&ev64[i], &ev);
-			// x86Code: drop events of knotes deleted since the copyout (see wq_knote_live_locked)
+			// x86Sim: drop events of knotes deleted since the copyout (see wq_knote_live_locked)
 			if (!wq_knote_live(&ev))
 			{
 				wq_dbg_event(&ev64[i], false, 0, 0);
@@ -570,7 +570,7 @@ extern void __simple_fprintf(int fd, const char* format, ...);
 
 #ifndef VARIANT_DYLD
 /*
- * x86Code: workloop kqueues (kevent_id, KEVENT_FLAG_WORKLOOP) for foreign
+ * x86Sim: workloop kqueues (kevent_id, KEVENT_FLAG_WORKLOOP) for foreign
  * libSystems. libdispatch drives every serial queue hierarchy through one.
  *
  * Emulated subset, following XNU's kern_event.c:
@@ -602,11 +602,11 @@ struct workloop
 	bool used;
 	bool servicing;
 	bool has_request;
-	// x86Code: as in XNU the thread request knote is EV_CLEAR: delivering it to a
+	// x86Sim: as in XNU the thread request knote is EV_CLEAR: delivering it to a
 	// servicer consumes it until it is touched again (EV_ADD/EV_ENABLE). It was
 	// redelivered on every bind, waking servicers for a workloop nobody enqueued.
 	bool request_active;
-	// x86Code: kqwl_owner: port name (low 2 bits masked) of the thread that owns the
+	// x86Sim: kqwl_owner: port name (low 2 bits masked) of the thread that owns the
 	// workloop (uncontended dispatch_sync), learnt from NOTE_WL_DISCOVER_OWNER and
 	// cleared by NOTE_WL_END_OWNERSHIP from that thread. No servicer runs while set.
 	uint32_t owner;
@@ -632,11 +632,11 @@ static int wl_log_fd = -1;
 
 extern long sys_getpid(void);
 
-// One log per process: /private/tmp/x86code-workloop.<pid>.log
+// One log per process: /private/tmp/x86sim-workloop.<pid>.log
 #define WLLOG(...) do { \
 		if (wl_log_fd < 0) { \
 			char wl_log_path[64]; \
-			__simple_sprintf(wl_log_path, "/private/tmp/x86code-workloop.%d.log", (int) sys_getpid()); \
+			__simple_sprintf(wl_log_path, "/private/tmp/x86sim-workloop.%d.log", (int) sys_getpid()); \
 			wl_log_fd = sys_open(wl_log_path, O_WRONLY | O_CREAT | O_APPEND, 0644); \
 		} \
 		__simple_fprintf(wl_log_fd, __VA_ARGS__); \
@@ -662,7 +662,7 @@ static struct workloop* wl_get_locked(uint64_t id)
 	struct workloop* free_slot = NULL;
 	int i;
 
-	// x86Code: workloops were never freed, so a process that made more than WL_MAX of
+	// x86Sim: workloops were never freed, so a process that made more than WL_MAX of
 	// them over its life (backboardd: an XPC connection, and so a workloop, per Metal
 	// reconnect) got ENOMEM from kevent_id, and libdispatch crashed in
 	// _dispatch_event_loop_poke ("Unexpected error from kernel"). An idle entry (not
@@ -698,7 +698,7 @@ static bool wl_bind_locked(struct workloop* wl)
 	int n = 0;
 	bool deliver_request = wl->has_request && wl->request_active;
 
-	// x86Code: no servicer while a thread owns the workloop (XNU kqworkloop_wakeup)
+	// x86Sim: no servicer while a thread owns the workloop (XNU kqworkloop_wakeup)
 	if (wl->servicing || wl->owner != 0 || (!deliver_request && wl->npending == 0))
 		return false;
 
@@ -755,7 +755,7 @@ static void wl_post_event(uint64_t id, const struct kevent_qos_s* ev)
 		(unsigned long long) id, (unsigned long long) ev->ident, ev->filter, ev->flags, ev->fflags,
 		(unsigned long long) ev->data, (unsigned long long) ev->ext[0], (unsigned long long) ev->ext[1]);
 	libsimple_lock_lock(&wl_lock);
-	// x86Code: a delete recorded before this is skipped here; one recorded after purges it
+	// x86Sim: a delete recorded before this is skipped here; one recorded after purges it
 	if (!wq_knote_live(ev))
 	{
 		libsimple_lock_unlock(&wl_lock);
@@ -785,7 +785,7 @@ static void wl_returned(struct wq_kevent_data* data)
 	bool request;
 
 	WLTRACE("return 0x%llx: %d changes\n", (unsigned long long) wl->id, n);
-	// x86Code: XNU applies the changes a servicer returns (KEVENT_FLAG_PARKING) and hands
+	// x86Sim: XNU applies the changes a servicer returns (KEVENT_FLAG_PARKING) and hands
 	// their errors back to it, e.g. an ESTALE "leave" that libdispatch then redrives. They
 	// were dropped, and the first error also stopped the remaining changes.
 	if (n > 0)
@@ -815,7 +815,7 @@ static void wl_returned(struct wq_kevent_data* data)
 }
 
 // Debounce: the change only applies if (*addr & mask) == (value & mask)
-// x86Code: like filt_wlupdate, the loaded value goes back in ext[VALUE] (libdispatch redrives
+// x86Sim: like filt_wlupdate, the loaded value goes back in ext[VALUE] (libdispatch redrives
 // an ESTALE error from it), and ownership is discovered/ended here
 static bool wl_stale(struct workloop* wl, struct kevent_qos_s* ch)
 {
@@ -1003,7 +1003,7 @@ long sys_kevent_id(unsigned long long id, const struct kevent_qos_s *changelist,
 		if (eventlist == NULL || nout >= nevents)
 			return -err;
 		eventlist[nout] = *ch;
-		eventlist[nout].flags = ch->flags | EV_ERROR; // x86Code: XNU keeps the flags
+		eventlist[nout].flags = ch->flags | EV_ERROR; // x86Sim: XNU keeps the flags
 		eventlist[nout].data = err;
 		nout++;
 	}

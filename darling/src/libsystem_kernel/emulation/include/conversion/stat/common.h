@@ -146,7 +146,7 @@ struct stat64;
 
 void stat_linux_to_bsd(const struct linux_stat* lstat, struct stat* stat);
 void stat_linux_to_bsd64(const struct linux_stat* lstat, struct stat64* stat);
-// x86Code: st_flags (chflags flags, xnu_syscall/bsd/helper/misc/bsdflags.h); struct stat64 is opaque elsewhere
+// x86Sim: st_flags (chflags flags, xnu_syscall/bsd/helper/misc/bsdflags.h); struct stat64 is opaque elsewhere
 void stat_set_flags64(struct stat64* stat, unsigned int flags);
 void statfs_linux_to_bsd(const struct linux_statfs64* lstat, struct bsd_statfs* stat);
 void statfs_linux_to_bsd64(const struct linux_statfs64* lstat, struct bsd_statfs64* stat);

@@ -17,7 +17,7 @@ long sys_setrlimit(unsigned int which, const struct xnu_rlimit* rlp)
 
 	if (which == LINUX_RLIMIT_NOFILE)
 	{
-		// x86Code: mldr gives every thread its own darlingserver RPC socket and puts those at the top of the fd
+		// x86Sim: mldr gives every thread its own darlingserver RPC socket and puts those at the top of the fd
 		// range the process started with (socket_bitmap_get: down from the initial RLIMIT_NOFILE), and libkqueue's
 		// and libdispatch's descriptors live up there too. A process that lowered its limit could then create no
 		// thread (dup2 to the high fd fails; mldr aborts with "Failed to create socket": revisiond, which sets 1000).

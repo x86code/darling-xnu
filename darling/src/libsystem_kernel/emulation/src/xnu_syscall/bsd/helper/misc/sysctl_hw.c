@@ -25,14 +25,14 @@ enum {
 	_HW_CPUTHREADTYPE,
 	_HW_64BITCAPABLE,
 	_HW_CPUFREQUENCY = 15,
-	_HW_CPUFAMILY = 1100, // x86Code (Speed 27): the arm64 identity below
+	_HW_CPUFAMILY = 1100, // x86Sim (Speed 27): the arm64 identity below
 	_HW_CPUSUBFAMILY,
 	_HW_OPTIONAL,
 	_HW_OPTIONAL_ARM,
 };
 
 /*
- * x86Code (Speed 27): an arm64 iOS-simulator process (host/arm64host; darling_x86code_arm64) runs on an emulated
+ * x86Sim (Speed 27): an arm64 iOS-simulator process (host/arm64host; darling_x86sim_arm64) runs on an emulated
  * Apple-silicon CPU, and a Mac's simulator processes see the Mac's: hw.cputype CPU_TYPE_ARM64, hw.machine "arm64"
  * (uname), hw.cpufamily, hw.optional.arm64 and the hw.optional.arm.FEAT_* keys. They saw the Linux host's x86_64:
  * Core ML compiled models "for platform intel" (E5), whose BNNS path an arm64 runtime doesn't have, and Spotlight's
@@ -42,14 +42,14 @@ enum {
  * Other processes keep the host's identity and get no hw.optional (Darling never had it).
  */
 #ifndef VARIANT_DYLD
-extern bool darling_x86code_arm64;
-#define X86CODE_ARM64() (darling_x86code_arm64)
+extern bool darling_x86sim_arm64;
+#define X86SIM_ARM64() (darling_x86sim_arm64)
 #else
-#define X86CODE_ARM64() 0
+#define X86SIM_ARM64() 0
 #endif
-#define X86CODE_CPU_TYPE_ARM64 0x0100000c
-#define X86CODE_CPU_SUBTYPE_ARM64E 2
-#define X86CODE_CPUFAMILY_ARM_FIRESTORM_ICESTORM 0x1b588bb3
+#define X86SIM_CPU_TYPE_ARM64 0x0100000c
+#define X86SIM_CPU_SUBTYPE_ARM64E 2
+#define X86SIM_CPUFAMILY_ARM_FIRESTORM_ICESTORM 0x1b588bb3
 
 static sysctl_handler(handle_cpufamily);
 static sysctl_handler(handle_cpusubfamily);
@@ -227,14 +227,14 @@ sysctl_handler(handle_pagesize)
 sysctl_handler(handle_cputype)
 {
 	sysctl_handle_size(sizeof(int));
-	*((int*) old) = X86CODE_ARM64() ? X86CODE_CPU_TYPE_ARM64 : gethostinfo()->cpu_type;
+	*((int*) old) = X86SIM_ARM64() ? X86SIM_CPU_TYPE_ARM64 : gethostinfo()->cpu_type;
 	return 0;
 }
 
 sysctl_handler(handle_cpusubtype)
 {
 	sysctl_handle_size(sizeof(int));
-	*((int*) old) = X86CODE_ARM64() ? X86CODE_CPU_SUBTYPE_ARM64E : gethostinfo()->cpu_subtype;
+	*((int*) old) = X86SIM_ARM64() ? X86SIM_CPU_SUBTYPE_ARM64E : gethostinfo()->cpu_subtype;
 	return 0;
 }
 
@@ -266,22 +266,22 @@ sysctl_handler(handle_cpu64bitcapable)
 
 sysctl_handler(handle_machine)
 {
-	copyout_string(X86CODE_ARM64() ? "arm64" : need_uname()->machine, (char*) old, oldlen);
+	copyout_string(X86SIM_ARM64() ? "arm64" : need_uname()->machine, (char*) old, oldlen);
 	return 0;
 }
 
 sysctl_handler(handle_cpufamily)
 {
-	if (!X86CODE_ARM64())
+	if (!X86SIM_ARM64())
 		return -ENOENT;
 	sysctl_handle_size(sizeof(int));
-	*((int*) old) = X86CODE_CPUFAMILY_ARM_FIRESTORM_ICESTORM;
+	*((int*) old) = X86SIM_CPUFAMILY_ARM_FIRESTORM_ICESTORM;
 	return 0;
 }
 
 sysctl_handler(handle_cpusubfamily)
 {
-	if (!X86CODE_ARM64())
+	if (!X86SIM_ARM64())
 		return -ENOENT;
 	sysctl_handle_size(sizeof(int));
 	*((int*) old) = 2; // CPUSUBFAMILY_ARM_HS (an M1's)
@@ -290,7 +290,7 @@ sysctl_handler(handle_cpusubfamily)
 
 sysctl_handler(handle_optional_one)
 {
-	if (!X86CODE_ARM64())
+	if (!X86SIM_ARM64())
 		return -ENOENT;
 	sysctl_handle_size(sizeof(int));
 	*((int*) old) = 1;
@@ -299,7 +299,7 @@ sysctl_handler(handle_optional_one)
 
 sysctl_handler(handle_optional_zero)
 {
-	if (!X86CODE_ARM64())
+	if (!X86SIM_ARM64())
 		return -ENOENT;
 	sysctl_handle_size(sizeof(int));
 	*((int*) old) = 0;

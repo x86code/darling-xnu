@@ -21,7 +21,7 @@ __attribute__((weak))
 __attribute__((visibility("default")))
 void kqueue_socket_changed(int fd)
 {
-	// x86Code: on the simulator's libSystem libkqueue is libkqueue_sim, found by name (foreign_hook.h)
+	// x86Sim: on the simulator's libSystem libkqueue is libkqueue_sim, found by name (foreign_hook.h)
 	FOREIGN_HOOK(void (*)(int), foreign, "__darling_sim_kqueue_socket_changed");
 	if (foreign)
 		foreign(fd);
@@ -67,7 +67,7 @@ long sys_connect_nocancel(int fd, const void* name, int socklen)
 	return ret;
 }
 
-// x86Code: connectx (BSD 447). iOS 27's Network.framework opens every TCP flow with connectx(), not connect(); without it
+// x86Sim: connectx (BSD 447). iOS 27's Network.framework opens every TCP flow with connectx(), not connect(); without it
 // the call failed and NSURLSession reported "The Internet connection appears to be offline" (ENETDOWN on the flow).
 // sa_endpoints_t: sae_srcif (u32), sae_srcaddr, sae_srcaddrlen, sae_dstaddr, sae_dstaddrlen. A source address is bound
 // first; the interface index (IP_BOUND_IF) is advisory here. Data passed with the call (TCP fast open / resume on
@@ -106,7 +106,7 @@ long sys_connectx(int fd, const void* endpoints, unsigned int associd, unsigned 
 	return 0;
 }
 
-// x86Code: disconnectx (BSD 448): one connection per socket here (connectx's id 1): shut it down both ways
+// x86Sim: disconnectx (BSD 448): one connection per socket here (connectx's id 1): shut it down both ways
 extern long sys_shutdown(int fd, int how);
 long sys_disconnectx(int fd, unsigned int associd, unsigned int connid)
 {

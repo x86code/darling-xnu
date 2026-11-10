@@ -23,10 +23,10 @@ long sys_listxattr(const char* path, char* namebuf, unsigned long size, int opti
 	if (ret < 0)
 		return errno_linux_to_bsd(ret);
 
-	// x86Code: pass the expanded path (this passed the caller's path, so prefix paths
+	// x86Sim: pass the expanded path (this passed the caller's path, so prefix paths
 	// such as /Volumes/SystemRoot/... failed with ENOENT; Foundation lists xattrs when
 	// atomically replacing files, so e.g. every lsd database save failed)
-	// x86Code: Linux names -> Darwin names (xattr_names.h)
+	// x86Sim: Linux names -> Darwin names (xattr_names.h)
 	char lbuf[16384];
 	if (options & XATTR_NOFOLLOW)
 		ret = LINUX_SYSCALL(__NR_llistxattr, vc.path, lbuf, sizeof(lbuf));

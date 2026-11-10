@@ -1,4 +1,4 @@
-// x86Code: access_extended (syscall 284, libc's accessx_np). Foundation's atomic file
+// x86Sim: access_extended (syscall 284, libc's accessx_np). Foundation's atomic file
 // replacement (-[NSFileManager replaceItemAtURL:...], used e.g. by lsd to save its
 // CSStore databases) checks access with it; without it every save failed with ENOSYS,
 // lsd never recorded its database seeding as complete and served clients (SpringBoard)

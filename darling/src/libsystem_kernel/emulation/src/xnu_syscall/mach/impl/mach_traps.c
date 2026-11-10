@@ -17,7 +17,7 @@
 
 #include <darlingserver/rpc.h>
 
-#define UNIMPLEMENTED_TRAP() { char msg[] = "Called unimplemented Mach trap: "; write(2, msg, sizeof(msg)-1); write(2, __FUNCTION__, sizeof(__FUNCTION__)-1); write(2, "\n", 1); x86code_unsupported(__FUNCTION__, 0); }
+#define UNIMPLEMENTED_TRAP() { char msg[] = "Called unimplemented Mach trap: "; write(2, msg, sizeof(msg)-1); write(2, __FUNCTION__, sizeof(__FUNCTION__)-1); write(2, "\n", 1); x86sim_unsupported(__FUNCTION__, 0); }
 
 mach_port_name_t mach_reply_port_impl(void)
 {
@@ -105,7 +105,7 @@ kern_return_t semaphore_signal_trap_impl(
 {
 	int code = dserver_rpc_semaphore_signal(signal_name);
 
-	// x86Code: experiment — retry transient send failures to darlingserver
+	// x86Sim: experiment — retry transient send failures to darlingserver
 	for (int i = 0; i < 50 && (code == -111 /* ECONNREFUSED */ || code == -11 /* EAGAIN */); i++) {
 		struct timespec ts = { 0, 2000000 };
 		LINUX_SYSCALL(__NR_nanosleep, &ts, NULL);
@@ -288,7 +288,7 @@ kern_return_t _kernelrpc_mach_vm_deallocate_trap_impl(
 	}
 }
 
-// x86Code: purgeable memory. Darling never purges anything (VM_FLAGS_PURGABLE allocations are
+// x86Sim: purgeable memory. Darling never purges anything (VM_FLAGS_PURGABLE allocations are
 // plain anonymous memory), so every object is and stays nonvolatile: SET_STATE succeeds and
 // reports the old state as VM_PURGABLE_NONVOLATILE ("not emptied"), GET_STATE reports it too.
 // The unimplemented trap failed with KERN_FAILURE; Apple's SQLite page cache (purgeableCache*,
@@ -320,9 +320,9 @@ kern_return_t _kernelrpc_mach_vm_purgable_control_trap_impl(
 	}
 }
 
-// x86Code (Align 1): set_maximum for _kernelrpc_mach_vm_protect_trap: each mapping of [start, end) (from
+// x86Sim (Align 1): set_maximum for _kernelrpc_mach_vm_protect_trap: each mapping of [start, end) (from
 // /proc/self/maps) gets its current protection & max. KERN_INVALID_ADDRESS if part of the range is unmapped (XNU).
-static kern_return_t x86code_protect_max(unsigned long start, unsigned long end, int max)
+static kern_return_t x86sim_protect_max(unsigned long start, unsigned long end, int max)
 {
 	struct simple_readline_buf rbuf;
 	char line[512];
@@ -374,7 +374,7 @@ kern_return_t _kernelrpc_mach_vm_protect_trap_impl(
 	if (new_protection & VM_PROT_EXECUTE)
 		prot |= PROT_EXEC;
 
-	// x86Code (Align 1): XNU's vm_map_protect works on the whole pages the range touches and, with set_maximum, sets
+	// x86Sim (Align 1): XNU's vm_map_protect works on the whole pages the range touches and, with set_maximum, sets
 	// the maximum protection and lowers the current one to it (current &= new max): it never grants a right.
 	// set_maximum was ignored, so vm_protect(..., TRUE, VM_PROT_ALL) made read-only or guard pages writable.
 	// Linux has no maximum protection: each mapping in the range keeps (its protection & new_protection).
@@ -386,7 +386,7 @@ kern_return_t _kernelrpc_mach_vm_protect_trap_impl(
 		if (end < start)
 			return KERN_INVALID_ARGUMENT;
 		if (set_maximum)
-			return x86code_protect_max(start, end, prot);
+			return x86sim_protect_max(start, end, prot);
 		ret = mprotect((void*)start, end - start, prot);
 	}
 	if (ret == -1)
@@ -425,7 +425,7 @@ kern_return_t _kernelrpc_mach_vm_map_trap_impl(
 	if (cur_protection & VM_PROT_EXECUTE)
 		prot |= PROT_EXEC;
 
-	// x86Code (Align 1): XNU's vm_map_enter fails a fixed request without VM_FLAGS_OVERWRITE over anything already
+	// x86Sim (Align 1): XNU's vm_map_enter fails a fixed request without VM_FLAGS_OVERWRITE over anything already
 	// mapped (KERN_NO_SPACE); MAP_FIXED replaced whatever was there, so a fixed allocation that should have failed
 	// silently unmapped another allocation (libmalloc's xzone realloc-in-place asks for the segment after its own with
 	// VM_FLAGS_FIXED and relies on the failure). Now MAP_FIXED_NOREPLACE unless OVERWRITE, and the failures return
@@ -748,7 +748,7 @@ kern_return_t _kernelrpc_mach_port_type_impl(
 	return code;
 };
 
-// x86Code: for iokitd (see host_darling_set_io_master_port in darlingserver)
+// x86Sim: for iokitd (see host_darling_set_io_master_port in darlingserver)
 VISIBLE
 kern_return_t __darling_set_io_master_port(mach_port_name_t port)
 {
@@ -756,7 +756,7 @@ kern_return_t __darling_set_io_master_port(mach_port_name_t port)
 	return code < 0 ? KERN_FAILURE : code;
 }
 
-// x86Code: darlingserver has no bank attribute manager, so a voucher made only of
+// x86Sim: darlingserver has no bank attribute manager, so a voucher made only of
 // bank attributes cannot be created. Such a voucher carries no other state; return
 // the empty voucher (MACH_VOUCHER_NULL), as XNU does for empty recipes. libdispatch
 // asks for one for every process and copes with a null task voucher.
@@ -923,7 +923,7 @@ kern_return_t pid_for_task_impl(
 	return code;
 }
 
-// x86Code: hand out `count` consecutive activity ids (libdispatch reserves blocks of
+// x86Sim: hand out `count` consecutive activity ids (libdispatch reserves blocks of
 // them for tracing and crashes without). XNU uses one global counter; here the pid in
 // the high bits keeps ids from different processes apart. Ids stay below 2^56
 // (firehose activity id mask) and are never 0.
@@ -975,7 +975,7 @@ kern_return_t mk_timer_arm_impl(mach_port_name_t name, uint64_t expire_time)
 	return code;
 }
 
-// x86Code: mach trap 95 (mk_timer_arm_leeway) was unimplemented ("Unimplemented mach trap (95)"), so a timer armed with it
+// x86Sim: mach trap 95 (mk_timer_arm_leeway) was unimplemented ("Unimplemented mach trap (95)"), so a timer armed with it
 // never fired. SpringBoard's status-bar clock is driven by one (SpringBoardFoundation's SBFMachNextMinuteDateProvider
 // arms an mk_timer for the next minute with mk_timer_arm_leeway): the time stayed at the boot minute. The deadline is in
 // mach_absolute_time() units, or mach_continuous_time() with MK_TIMER_CONTINUOUS; both are the same clock here (no

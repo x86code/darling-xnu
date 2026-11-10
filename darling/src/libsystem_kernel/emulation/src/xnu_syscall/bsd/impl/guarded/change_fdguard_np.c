@@ -1,4 +1,4 @@
-// x86Code: change_fdguard_np (BSD syscall 444). Network.framework guards every socket it owns
+// x86Sim: change_fdguard_np (BSD syscall 444). Network.framework guards every socket it owns
 // (nw_fd_wrapper_guard); with ENOSYS it logged "Failed to guard socket fd" for each flow. Darling enforces no guards
 // (guarded_close_np closes, guarded_open_np opens), so this only checks the descriptor and applies XNU's fdflags
 // exchange: on input *fdflagsp holds the new descriptor flags (FD_CLOEXEC), on output the old ones.
