@@ -2,12 +2,12 @@
 // policies. Nothing is sandboxed, so sandbox_check() (Sandbox call 2) answers
 // "allowed" like XNU does for an unsandboxed process; ENOSYS made daemons such as
 // cfprefsd refuse clients. Other calls are logged once and fail with ENOSYS.
+#define SANDBOX_CALL_CHECK 2
 // sandbox_container_path_for_pid/_audit_token (call 4) fails with ENOTSUP for a
 // process without a container, as observed in the iOS simulator on a Mac.
-#define SANDBOX_CALL_CHECK 2
+#define SANDBOX_CALL_CONTAINER_PATH 4
 // sandbox_passthrough_access (call 12) is how cfprefsd checks a client may write a
 // preferences directory; with no sandbox there is nothing to deny.
-#define SANDBOX_CALL_CONTAINER_PATH 4
 #define SANDBOX_CALL_PASSTHROUGH_ACCESS 12
 #include <darling/emulation/common/simple.h>
 #include <stdint.h>
@@ -22,22 +22,26 @@ long sys___mac_syscall(const char* policy, int call, void* arg)
 	static int nseen;
 	int i;
 
-	if (policy != 0 && strcmp(policy, "Sandbox") == 0
-			&& (call == SANDBOX_CALL_CHECK || call == SANDBOX_CALL_PASSTHROUGH_ACCESS))
-		return 0;
-	if (policy != 0 && strcmp(policy, "Sandbox") == 0 && call == SANDBOX_CALL_CONTAINER_PATH)
-		return -ENOTSUP;
+	if (policy == 0)
+		return -ENOSYS;
+	if (strcmp(policy, "Sandbox") == 0)
+	{
+		if (call == SANDBOX_CALL_CHECK || call == SANDBOX_CALL_PASSTHROUGH_ACCESS)
+			return 0;
+		if (call == SANDBOX_CALL_CONTAINER_PATH)
+			return -ENOTSUP;
+	}
 
 	for (i = 0; i < nseen; i++)
 		if (seen[i].call == call && strcmp(seen[i].policy, policy) == 0)
 			return -ENOSYS;
-	if (nseen < 32 && policy != 0 && strlen(policy) < sizeof(seen[0].policy))
+	if (nseen < 32 && strlen(policy) < sizeof(seen[0].policy))
 	{
 		__simple_sprintf(seen[nseen].policy, "%s", policy);
 		seen[nseen].call = call;
 		nseen++;
 	}
-	__simple_printf("__mac_syscall(%s, %d)\n", policy ? policy : "(null)", call);
+	__simple_printf("__mac_syscall(%s, %d)\n", policy, call);
 	return -ENOSYS;
 }
 
