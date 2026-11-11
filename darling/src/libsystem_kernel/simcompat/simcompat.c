@@ -54,7 +54,14 @@ EXPORT mach_msg_return_t mach_msg2_internal(void* data, mach_msg_option64_t opti
 	if (option64 & MACH64_MSG_VECTOR)
 	{
 		sim_mach_msg_vector_t* vec = (sim_mach_msg_vector_t*) data;
+		// x86Sim Platforms 1: in vector mode the send and receive "sizes" are vector counts (XNU's mach_msg2():
+		// send_size in the high half of the third argument, rcv_size in the low half of the seventh). A receive-only
+		// call passes 0 send vectors and 2 receive vectors (message + aux): counting the send half alone, the aux header
+		// was never written and libdispatch's large-message receive (tvOS / watchOS 27) read stack garbage as its size
+		// ("BUG IN LIBDISPATCH: Invalid msg aux data size" in launchd_sim, configd_sim, cfprefsd, ...).
 		uint32_t count = HIGH_32(msgh_bits_and_send_size);
+		if (LOW_32(rcv_size_and_priority) > count)
+			count = LOW_32(rcv_size_and_priority);
 
 		msg = (mach_msg_header_t*) vec[0].msgv_data;
 		rcv_msg = vec[0].msgv_rcv_addr ? (mach_msg_header_t*) vec[0].msgv_rcv_addr : msg;
