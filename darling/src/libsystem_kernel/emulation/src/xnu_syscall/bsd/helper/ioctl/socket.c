@@ -24,6 +24,20 @@ int handle_socket(int fd, unsigned int cmd, void* arg, int* retval)
 		case BSD_SIOCGIFFUNCTIONALTYPE:
 			*retval = sockextra_functional_type(fd, arg);
 			return IOCTL_HANDLED;
+		// x86Sim: Network.framework reads these per interface (nw_interface): the MTU from Linux; link quality,
+		// delegate, expensive, constrained and 218 (unknown) have no Linux counterpart and keep the ENOTTY that the
+		// pass-through returned, without its "Passing thru unhandled ioctl" line (~4500 a boot: geod, passd, ...)
+		case SIOCGIFMTU:
+			*retval = sockextra_mtu(fd, arg);
+			return IOCTL_HANDLED;
+		case 0xc020698aU: // SIOCGIFLINKQUALITYMETRIC, _IOWR('i', 138, struct ifreq)
+		case 0xc020699dU: // SIOCGIFDELEGATE, _IOWR('i', 157, struct ifreq)
+		case 0xc02069a0U: // SIOCGIFEXPENSIVE, _IOWR('i', 160, struct ifreq)
+		case 0xc02069ccU: // SIOCGIFCONSTRAINED, _IOWR('i', 204, struct ifreq)
+		case 0xc02069daU: // _IOWR('i', 218, struct ifreq)
+		case BSD_SIOCGCONNINFO:
+			*retval = -ENOTTY;
+			return IOCTL_HANDLED;
 		// x86Sim: SIOCGCONNINFO (sockextra_conninfo(), XNU's in_getconninfo()) is left unanswered (ENOTTY, as before):
 		// with it answered, Network.framework's nw_endpoint_flow_connected() took
 		// nw_endpoint_flow_override_connected_on_path() and aborted on a recursive os_unfair_lock in

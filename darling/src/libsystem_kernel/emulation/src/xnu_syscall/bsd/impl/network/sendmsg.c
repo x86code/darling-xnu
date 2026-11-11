@@ -11,6 +11,7 @@
 #include <darling/emulation/xnu_syscall/bsd/helper/bsdthread/cancelable.h>
 #include <darling/emulation/xnu_syscall/bsd/helper/network/route.h>
 #include <darling/emulation/xnu_syscall/bsd/helper/network/socktables.h>
+#include <darling/emulation/xnu_syscall/bsd/helper/network/sockextra.h>
 
 extern void *malloc(__SIZE_TYPE__ size);
 extern void free(void* ptr);
@@ -88,6 +89,10 @@ long sys_sendmsg_nocancel(int socket, const struct bsd_msghdr* msg, int flags)
 
 	// x86Sim: willi/darling-xnu#8: Linux never raises SIGPIPE; XNU's is raised below unless SO_NOSIGPIPE/MSG_NOSIGNAL
 	linux_flags = msgflags_bsd_to_linux(flags) | LINUX_MSG_NOSIGNAL;
+	// x86Sim: a local datagram send never blocks, as on XNU (sockextra.h)
+	const int unix_dgram = sockextra_unix_dgram(socket);
+	if (unix_dgram)
+		linux_flags |= LINUX_MSG_DONTWAIT;
 
 #ifdef __NR_socketcall
 	ret = LINUX_SYSCALL(__NR_socketcall, LINUX_SYS_SENDMSG,
@@ -98,6 +103,8 @@ long sys_sendmsg_nocancel(int socket, const struct bsd_msghdr* msg, int flags)
 
 	if (ret < 0) {
 		ret = errno_linux_to_bsd(ret);
+		if (unix_dgram && ret == -EAGAIN)
+			ret = -ENOBUFS;
 		// XNU's error, and its SIGPIPE: Linux raised none (socktables.h)
 		ret = socket_send_failed(socket, ret, flags & BSD_MSG_NOSIGNAL, 0);
 	}

@@ -529,6 +529,7 @@ void* __bsd_syscall_table[600] = {
 	[515] = sys_ulock_wait,
 	[516] = sys_ulock_wake,
 	[517] = sys_fclonefileat,
+	[520] = sys_terminate_with_payload,
 	[521] = sys_abort_with_payload,
 	[524] = sys_setattrlistat,
 	[598] = sys_x86sim_inotify, // x86Sim: Darling-private, see x86sim_inotify.c

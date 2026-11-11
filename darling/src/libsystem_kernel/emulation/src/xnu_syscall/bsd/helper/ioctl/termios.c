@@ -333,7 +333,20 @@ int handle_termios(int fd, unsigned int cmd, void* arg, int* retval)
 		}
 		default:
 		{
-			__simple_printf("Passing thru unhandled ioctl 0x%x on fd %d\n", cmd, fd);
+			// x86Sim: once per command and process (a polled ioctl repeated the line thousands of times a boot)
+			static unsigned int seen[32];
+			static unsigned int nseen;
+			unsigned int n = __atomic_load_n(&nseen, __ATOMIC_RELAXED);
+			bool known = false;
+			for (unsigned int i = 0; i < n && i < 32; i++)
+				known |= seen[i] == cmd;
+			if (!known) {
+				if (n < 32) {
+					seen[n] = cmd;
+					__atomic_store_n(&nseen, n + 1, __ATOMIC_RELAXED);
+				}
+				__simple_printf("Passing thru unhandled ioctl 0x%x on fd %d (logged once)\n", cmd, fd);
+			}
 			return IOCTL_PASS;
 		}
 	}

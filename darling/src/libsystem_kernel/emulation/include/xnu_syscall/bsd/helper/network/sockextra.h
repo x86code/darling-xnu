@@ -21,6 +21,15 @@ void sockextra_closed(int fd);
 // SIOCGIFFUNCTIONALTYPE (XNU's ifnet_functional_type()): ifr is a struct ifreq; returns 0 or a negative BSD errno
 #define BSD_SIOCGIFFUNCTIONALTYPE 0xc02069adU // _IOWR('i', 173, struct ifreq)
 long sockextra_functional_type(int fd, void* ifr);
+// x86Sim: XNU never blocks a send on a local datagram socket: a full receiver fails it with ENOBUFS (uipc_send()'s
+// sbappendaddr()), where Linux sleeps until there is room. launchd_sim's dispatch workers log (os_log_simple_send())
+// into launchd_sim's own CoreSimulator log socket; on a first boot they filled it, slept in sendto() with no worker
+// left to drain it (Darling has no workqueue to add threads), and launchd_sim stopped answering bootstrap check-ins:
+// every process hung in libxpc's initializer. 1 for an AF_UNIX SOCK_DGRAM socket: send it MSG_DONTWAIT, EAGAIN
+// becomes ENOBUFS (sendto.c, sendmsg.c).
+int sockextra_unix_dgram(int fd);
+// SIOCGIFMTU (Linux SIOCGIFMTU on the same ifreq layout: name[16], int at +16): 0 or a negative BSD errno
+long sockextra_mtu(int fd, void* ifr);
 // SIOCGCONNINFO (XNU's in_getconninfo()/in6_getconninfo())
 long sockextra_conninfo(int fd, void* arg);
 #endif

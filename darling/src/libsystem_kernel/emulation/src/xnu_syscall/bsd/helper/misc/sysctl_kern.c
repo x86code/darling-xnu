@@ -26,6 +26,7 @@ enum {
 	_KERN_OSPRODUCTVERSION,
 	_KERN_BOOTARGS,
 	_KERN_BOOTSESSIONUUID, // x86Sim
+	_KERN_HV_VMM_PRESENT, // x86Sim
 
 	_KERN_SEMMNS = 1000,
 };
@@ -82,6 +83,9 @@ const struct known_sysctl sysctls_kern[] = {
 	{ .oid = _KERN_OSPRODUCTVERSION, .type = CTLTYPE_STRING, .exttype = "S", .name = "osproductversion", .handler = handle_osproductversion },
 	{ .oid = _KERN_BOOTARGS, .type = CTLTYPE_STRING, .exttype = "S", .name = "bootargs", .handler = handle_bootargs },
 	{ .oid = _KERN_BOOTSESSIONUUID, .type = CTLTYPE_STRING, .exttype = "S", .name = "bootsessionuuid", .handler = handle_bootsessionuuid },
+	// x86Sim: 0, as on a Mac running the simulator (not a VM guest); asked by chronod and backboardd, which logged
+	// "sysctlbyname for kern.hv_vmm_present failed" (the netboot handler answers an int 0)
+	{ .oid = _KERN_HV_VMM_PRESENT, .type = CTLTYPE_INT, .exttype = "I", .name = "hv_vmm_present", .handler = handle_netboot },
 	{ .oid = KERN_OSREV, .type = CTLTYPE_INT, .exttype = "I", .name = "osrevision", .handler = handle_osrevision },
 	{ .oid = KERN_SYSV, .type = CTLTYPE_NODE, .exttype = "", .name = "sysv", .subctls = sysctls_kern_sysv },
 	{ .oid = -1 }

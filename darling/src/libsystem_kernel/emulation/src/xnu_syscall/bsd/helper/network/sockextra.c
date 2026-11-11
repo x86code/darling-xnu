@@ -49,6 +49,15 @@ static int l_domain(int fd)
 	return l_getsockopt(fd, L_SOL_SOCKET, L_SO_DOMAIN, &d, &len) < 0 ? -1 : d;
 }
 
+int sockextra_unix_dgram(int fd)
+{
+	int t = 0;
+	unsigned int len = sizeof(t);
+	if (l_getsockopt(fd, L_SOL_SOCKET, 3 /* SO_TYPE */, &t, &len) < 0 || t != 2 /* SOCK_DGRAM */)
+		return 0;
+	return l_domain(fd) == 1 /* AF_UNIX */;
+}
+
 struct l_ifreq { char name[16]; union { struct { uint16_t family, port; uint32_t addr; } in; int index; char pad[24]; }; };
 struct l_ifconf { int len; int pad; void* buf; };
 
@@ -277,6 +286,21 @@ long sockextra_conninfo(int fd, void* arg)
 // other Ethernet as wired, anything else unknown. Network.framework's nw_path interface type comes from this (it was
 // passed through to Linux and failed): GeoServices' GEONetworkObserver counts a satisfied path as reachable only over
 // Wi-Fi, cellular or wired, so Maps showed "No Internet Connection" over an "other" interface.
+#define L_SIOCGIFMTU 0x8921
+
+long sockextra_mtu(int fd, void* arg)
+{
+	struct { char name[16]; int mtu; char pad[20]; } q;
+	char* ifr = arg;
+	memset(&q, 0, sizeof(q));
+	for (int i = 0; i < 15 && ifr[i]; i++) q.name[i] = ifr[i];
+	long r = LINUX_SYSCALL(__NR_ioctl, fd, L_SIOCGIFMTU, &q);
+	if (r < 0)
+		return errno_linux_to_bsd(r);
+	*(int*) (ifr + 16) = q.mtu;
+	return 0;
+}
+
 long sockextra_functional_type(int fd, void* arg)
 {
 	struct { char name[16]; union { struct { uint16_t family; char data[14]; } hw; uint32_t ftype; char pad[16]; }; } q;
