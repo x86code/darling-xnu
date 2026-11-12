@@ -5,6 +5,7 @@
 #include <sys/errno.h>
 #include <sys/proc_info.h>
 #include <mach/vm_prot.h>
+#include <mach/message.h> // x86Sim: audit_token_t (p_idversion)
 #include <stdbool.h>
 #include <sys/proc.h>
 #include <stddef.h>
@@ -437,6 +438,73 @@ out:
 	return platform;
 }
 
+/*
+ * x86Sim: the LC_UUID of a process's main executable (XNU's p_uuid), from its file: the arm64 slice (the simulator's
+ * programs; arm64-only Mach-Os run through the JIT), else x86_64, else a thin file's. 0 if found.
+ * logd keys every process's log messages by it ("main:" in its #DECODE errors; logd_helper caches the format strings
+ * under var/db/uuidtext/<uuid>): with zeros nothing a process logged could be decoded, so OSLogStore found nothing.
+ */
+static int _proc_exe_uuid(int32_t pid, unsigned char uuid[16])
+{
+	char path[1024];
+	uint64_t fullLength = 0;
+	uint32_t hdr[8];
+	long long slice = 0;
+	int fd, ret = -1;
+
+	if (dserver_rpc_get_executable_path(pid, path, sizeof(path), &fullLength) != 0)
+		return -1;
+	fd = LINUX_SYSCALL(__NR_open, path, LINUX_O_RDONLY | LINUX_O_CLOEXEC, 0);
+	if (fd < 0)
+		return -1;
+
+	if (LINUX_SYSCALL(__NR_pread64, fd, hdr, 8, 0) != 8)
+		goto out;
+	if (__builtin_bswap32(hdr[0]) == 0xcafebabe)
+	{
+		uint32_t n = __builtin_bswap32(hdr[1]), i;
+		long long x86 = -1;
+		slice = -1;
+		for (i = 0; i < n && i < 16; i++)
+		{
+			uint32_t arch[5];
+			if (LINUX_SYSCALL(__NR_pread64, fd, arch, sizeof(arch), 8 + i * sizeof(arch)) != sizeof(arch))
+				goto out;
+			if (__builtin_bswap32(arch[0]) == 0x0100000c) // CPU_TYPE_ARM64
+				slice = __builtin_bswap32(arch[2]);
+			else if (__builtin_bswap32(arch[0]) == 0x01000007) // CPU_TYPE_X86_64
+				x86 = __builtin_bswap32(arch[2]);
+		}
+		if (slice < 0)
+			slice = x86;
+		if (slice < 0)
+			goto out;
+	}
+	if (LINUX_SYSCALL(__NR_pread64, fd, hdr, 32, slice) != 32 || hdr[0] != 0xfeedfacf)
+		goto out;
+
+	{
+		long long off = slice + 32;
+		uint32_t i;
+		for (i = 0; i < hdr[4]; i++)
+		{
+			uint32_t lc[2]; // cmd, cmdsize
+			if (LINUX_SYSCALL(__NR_pread64, fd, lc, sizeof(lc), off) != sizeof(lc) || lc[1] < 8)
+				break;
+			if (lc[0] == 0x1b) // LC_UUID
+			{
+				if (LINUX_SYSCALL(__NR_pread64, fd, uuid, 16, off + 8) == 16)
+					ret = 0;
+				break;
+			}
+			off += lc[1];
+		}
+	}
+out:
+	LINUX_SYSCALL(__NR_close, fd);
+	return ret;
+}
+
 // x86Sim: proc_info_extended_id (545): proc_info for a pid, optionally checked against
 // a unique id; the id is not checked here.
 long sys_proc_info_extended_id(int32_t callnum, int32_t pid, uint32_t flavor, uint32_t flags,
@@ -461,8 +529,27 @@ static long _proc_pidonfo_uniqinfo(int32_t pid, void* buffer, int32_t bufsize)
 
 	memset(buffer, 0, bufsize);
 
-#warning Get UUID from kernel
-	memcpy(info->p_uuid, fakeuuid, sizeof(info->p_uuid));
+	if (_proc_exe_uuid(pid, info->p_uuid) != 0)
+		memcpy(info->p_uuid, fakeuuid, sizeof(info->p_uuid));
+
+	// x86Sim: p_idversion, the pid version a process's audit token carries (darlingserver: val[7]). logd keys every
+	// process's log records by (pid, pid version) from the audit token; readers ask for it here (OSLogStore of the
+	// current process found nothing while this was 0).
+	{
+		extern mach_port_t mach_task_self_;
+		extern kern_return_t task_name_for_pid(mach_port_t, int, mach_port_t*);
+		extern kern_return_t task_info(mach_port_t, int, int*, unsigned int*);
+		extern kern_return_t mach_port_deallocate(mach_port_t, mach_port_t);
+		mach_port_t name = MACH_PORT_NULL;
+		if (task_name_for_pid(mach_task_self_, pid, &name) == KERN_SUCCESS && name != MACH_PORT_NULL)
+		{
+			audit_token_t token;
+			unsigned int count = sizeof(token) / sizeof(int);   // TASK_AUDIT_TOKEN_COUNT
+			if (task_info(name, 15 /* TASK_AUDIT_TOKEN */, (int*) &token, &count) == KERN_SUCCESS)
+				info->p_idversion = (int32_t) token.val[7];
+			mach_port_deallocate(mach_task_self_, name);
+		}
+	}
 
 	//////////////////////////
 	// Read info for pid    //
