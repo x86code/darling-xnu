@@ -28,8 +28,19 @@
 #include <darling/emulation/xnu_syscall/bsd/impl/unistd/getuid.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/unistd/unlinkat.h>
 
+// x86Sim: clonefileat as fclonefileat on the opened source: a copy (copy_file_range reflinks where the Linux file
+// system can). Spotlight's index (CoreSpotlight, searchd) copies its shadow files with COPYFILE_CLONE_FORCE; with
+// ENOSYS here every index file stayed empty and CSSearchableIndex failed (CSIndexErrorDomain -1000). Regular files
+// only, as fclonefileat (APFS also clones directories).
 long sys_clonefileat(int src_fd, const char* src_path, int dest_fd, const char* dest_path, uint32_t flags) {
-	return -ENOSYS;
+	if (!src_path || !dest_path)
+		return -EFAULT;
+	int fd = sys_openat(src_fd, src_path, BSD_O_RDONLY | BSD_O_CLOEXEC | ((flags & XNU_CLONE_NOFOLLOW) ? BSD_O_NOFOLLOW : 0), 0);
+	if (fd < 0)
+		return (flags & XNU_CLONE_NOFOLLOW) && fd == -ELOOP ? -ENOTSUP : fd;
+	long ret = sys_fclonefileat(fd, dest_fd, dest_path, flags);
+	sys_close(fd);
+	return ret;
 }
 
 long sys_fclonefileat(int src_fd, int dest_fd, const char* dest_path, uint32_t flags) {
