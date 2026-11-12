@@ -16,6 +16,7 @@ extern char *strncpy(char *dest, const char *src, __SIZE_TYPE__ n);
 long sys_getsockname(int fd, void* asa, int* socklen)
 {
 	int ret;
+	int cap = socklen ? *socklen : 0;
 	struct sockaddr_fixup* fixed;
 	long route_ret;
 
@@ -34,7 +35,7 @@ long sys_getsockname(int fd, void* asa, int* socklen)
 	else
 	{
 		fixed = (struct sockaddr_fixup*) asa;
-		ret = *socklen = sockaddr_fixup_from_linux(fixed, asa, *socklen);
+		ret = *socklen = sockaddr_fixup_from_linux(fixed, asa, *socklen, cap);
 		if (ret > 0)
 			ret = 0;
 	}

@@ -24,6 +24,7 @@ long sys_recvfrom_nocancel(int fd, void* buf, unsigned long len,
 		int flags, void* from, int* socklen)
 {
 	int ret, linux_flags;
+	int cap = socklen ? *socklen : 0;
 	struct sockaddr_fixup* fixed;
 
 	linux_flags = msgflags_bsd_to_linux(flags);
@@ -40,7 +41,7 @@ long sys_recvfrom_nocancel(int fd, void* buf, unsigned long len,
 	else if (from != NULL)
 	{
 		fixed = (struct sockaddr_fixup*) from;
-		if ((*socklen = sockaddr_fixup_from_linux(fixed, from, *socklen)) < 0)
+		if ((*socklen = sockaddr_fixup_from_linux(fixed, from, *socklen, cap)) < 0)
 			ret = *socklen;
 	}
 

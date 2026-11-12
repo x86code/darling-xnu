@@ -37,29 +37,53 @@ int sockaddr_fixup_from_bsd(struct sockaddr_fixup* out, const void* bsd_sockaddr
 	return ret;
 }
 
-int sockaddr_fixup_from_linux(struct sockaddr_fixup* out, const void* linux_sockaddr, int linux_sockaddr_len) {
-	int ret = linux_sockaddr_len;
+// x86Sim: converted in a local copy and written back bounded by cap, the size of the caller's buffer (the kernel's
+// length can exceed it: the address was truncated). The in-place version wrote a whole sun_path (strncpy pads all 104
+// bytes) into whatever buffer the caller had, and strcpy'd a path an unnamed socket (a socketpair end: length 2) never
+// had: RealityKit's getsockname on a socketpair into a small sockaddr smashed its stack (__stack_chk_fail).
+// Returns the BSD length written (as XNU: min(address length, cap)), or a BSD errno.
+int sockaddr_fixup_from_linux(struct sockaddr_fixup* out, const void* linux_sockaddr, int linux_sockaddr_len, int cap) {
+	struct {
+		struct sockaddr_fixup sa;
+		char extra[16];  // Linux's sun_path is 108 bytes, BSD's 104
+	} tmp;
+	int ret, n = linux_sockaddr_len;
 
-	memcpy(out, linux_sockaddr, linux_sockaddr_len);
+	if (cap < 0) cap = 0;
+	if (n > cap) n = cap;
+	if (n > (int)sizeof(tmp)) n = sizeof(tmp);
+	if (n < 0) n = 0;
+	memset(&tmp, 0, sizeof(tmp));
+	memcpy(&tmp, linux_sockaddr, n);
+	ret = linux_sockaddr_len;
 
-	out->bsd_family = sfamily_linux_to_bsd(out->linux_family);
+	tmp.sa.bsd_family = sfamily_linux_to_bsd(tmp.sa.linux_family);
 
-	if (out->bsd_family == PF_LOCAL) {
-		struct vchroot_unexpand_args vc;
-		strcpy(vc.path, out->sun_path);
+	if (tmp.sa.bsd_family == PF_LOCAL) {
+		int plen = n - (int)(sizeof(tmp.sa) - sizeof(tmp.sa.sun_path));
+		if (plen > 0 && tmp.sa.sun_path[0] != '\0') {
+			struct vchroot_unexpand_args vc;
+			if (plen >= (int)sizeof(vc.path)) plen = sizeof(vc.path) - 1;
+			memcpy(vc.path, tmp.sa.sun_path, plen);
+			vc.path[plen] = '\0';
 
-		ret = vchroot_unexpand(&vc);
-		if (ret < 0)
-			return errno_linux_to_bsd(ret);
+			ret = vchroot_unexpand(&vc);
+			if (ret < 0)
+				return errno_linux_to_bsd(ret);
 
-		strncpy(out->sun_path, vc.path, sizeof(out->sun_path) - 1);
-		out->sun_path[sizeof(out->sun_path) - 1] = '\0';
-		ret = sizeof(*out) - sizeof(out->sun_path) + strlen(out->sun_path) + 1;
+			memset(tmp.sa.sun_path, 0, sizeof(tmp.sa.sun_path));
+			strncpy(tmp.sa.sun_path, vc.path, sizeof(tmp.sa.sun_path) - 1);
+			ret = sizeof(tmp.sa) - sizeof(tmp.sa.sun_path) + strlen(tmp.sa.sun_path) + 1;
+		} else if (plen > 0) {
+			ret = linux_sockaddr_len;  // abstract name: kept as is
+		} else {
+			ret = sizeof(tmp.sa) - sizeof(tmp.sa.sun_path);  // unnamed
+		}
 	}
 
-	if (ret >= 0) {
-		out->bsd_length = ret;
-	}
-
+	if (ret > (int)sizeof(tmp.sa)) ret = sizeof(tmp.sa);
+	tmp.sa.bsd_length = ret;
+	if (ret > cap) ret = cap;
+	memcpy(out, &tmp, ret);
 	return ret;
 }
