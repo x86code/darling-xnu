@@ -245,6 +245,10 @@ long sys_fcntl_nocancel(int fd, int cmd, long arg)
 			return 0;
 		case 96:
 			return 0;
+		// x86Sim: F_SINGLE_WRITER (76): a hint for the I/O throttle that one process writes the file. Spotlight's
+		// journal (searchd) sets it and took the EINVAL as a failed journal write ("TOC update FAILED err=22").
+		case 76:
+			return 0;
 		case 48: // F_NOCACHE
 			if (arg)
 				LINUX_SYSCALL(__NR_fadvise64, fd, 0, 0, 4 /* POSIX_FADV_DONTNEED */);
