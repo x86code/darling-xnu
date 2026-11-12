@@ -117,10 +117,20 @@ long sys_recvmsg_nocancel(int socket, struct bsd_msghdr* msg, int flags)
 			}
 		}
 
-		struct sockaddr_fixup* saddr = (struct sockaddr_fixup*) lmsg.msg_name;
-		if (saddr != NULL && lmsg.msg_namelen > 0)
-			saddr->bsd_family = sfamily_linux_to_bsd(saddr->linux_family);
-		msg->msg_namelen = lmsg.msg_namelen;
+		// x86Sim: the sender's address as recvfrom gives it (sockaddr_fixup_from_linux: sa_len set, bounded by the
+		// caller's buffer). Only the family byte was patched here, so sa_len kept the low byte of Linux's family
+		// (AF_INET6 10): Network.framework's UDP listener connect()ed its per-flow socket to the sender with that
+		// length (EINVAL) and NWListener over UDP never delivered a datagram.
+		if (lmsg.msg_name != NULL && lmsg.msg_namelen > 0)
+		{
+			int n = sockaddr_fixup_from_linux((struct sockaddr_fixup*) msg->msg_name, lmsg.msg_name, lmsg.msg_namelen, msg->msg_namelen);
+			if (n < 0)
+				ret = n;
+			else
+				msg->msg_namelen = n;
+		}
+		else
+			msg->msg_namelen = lmsg.msg_namelen;
 	}
 
 	if (lchdr != NULL)
