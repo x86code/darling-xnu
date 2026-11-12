@@ -34,6 +34,7 @@
 #include <darling/emulation/xnu_syscall/bsd/impl/kqueue/kevent_qos.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/kqueue/kqueue.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/misc/abort_with_payload.h>
+#include <darling/emulation/xnu_syscall/bsd/impl/mach/mach_eventlink.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/unistd/preadv.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/misc/clonefile.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/misc/csops.h>
@@ -458,6 +459,9 @@ void* __bsd_syscall_table[600] = {
 	[481] = sys_sendmsg_x, // x86Sim
 	[488] = sys_renameatx_np,
 	[494] = sys_persona,
+	[496] = sys_mach_eventlink_signal, // x86Sim
+	[497] = sys_mach_eventlink_wait_until,
+	[498] = sys_mach_eventlink_signal_wait_until,
 	[530] = sys_kqueue_workloop_ctl,
 	[540] = sys_preadv, // x86Sim
 	[541] = sys_pwritev,

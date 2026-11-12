@@ -97,27 +97,8 @@ EXPORT void voucher_mach_msg_clear(mach_msg_header_t* msg)
 
 /* --- eventlinks and work intervals (used by os_workgroup) --------------- */
 
-EXPORT kern_return_t mach_eventlink_create(task_t task, int option, mach_port_t* eventlink_pair)
-{
-	return KERN_NOT_SUPPORTED;
-}
-
-EXPORT kern_return_t mach_eventlink_destroy(mach_port_t eventlink)
-{
-	return KERN_NOT_SUPPORTED;
-}
-
-EXPORT kern_return_t mach_eventlink_associate(mach_port_t eventlink, thread_t thread,
-	uint64_t copyin_addr_wait, uint64_t copyin_mask_wait,
-	uint64_t copyin_addr_signal, uint64_t copyin_mask_signal, int option)
-{
-	return KERN_NOT_SUPPORTED;
-}
-
-EXPORT kern_return_t mach_eventlink_disassociate(mach_port_t eventlink, int option)
-{
-	return KERN_NOT_SUPPORTED;
-}
+// x86Sim: mach_eventlink_create / destroy / associate / disassociate are the MIG routines (libsyscall mach_eventlink.defs)
+// now, served by darlingserver's XNU; they were KERN_NOT_SUPPORTED stubs here.
 
 EXPORT int work_interval_instance_set_complexity(void* instance, uint8_t high, uint8_t low)
 {
