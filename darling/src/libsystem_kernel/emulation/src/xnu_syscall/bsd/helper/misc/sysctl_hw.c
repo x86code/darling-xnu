@@ -29,6 +29,9 @@ enum {
 	_HW_CPUSUBFAMILY,
 	_HW_OPTIONAL,
 	_HW_OPTIONAL_ARM,
+	_HW_ACTIVECPU = 1200, // x86Sim: activecpu, nperflevels, perflevel0.* (OID_AUTO in XNU)
+	_HW_NPERFLEVELS,
+	_HW_PERFLEVEL0,
 };
 
 /*
@@ -101,6 +104,13 @@ static const struct known_sysctl sysctls_hw_optional[] = {
 };
 
 static sysctl_handler(handle_availcpu);
+static sysctl_handler(handle_cachelinesize);
+static sysctl_handler(handle_l1icachesize);
+static sysctl_handler(handle_l1dcachesize);
+static sysctl_handler(handle_l2cachesize);
+static sysctl_handler(handle_tbfrequency);
+static sysctl_handler(handle_nperflevels);
+static sysctl_handler(handle_perflevel_name);
 static sysctl_handler(handle_physicalcpu);
 static sysctl_handler(handle_physicalcpu_max);
 static sysctl_handler(handle_logicalcpu);
@@ -114,9 +124,40 @@ static sysctl_handler(handle_cpu64bitcapable);
 static sysctl_handler(handle_machine);
 static sysctl_handler(handle_cpufrequency);
 
+static sysctl_handler(handle_physicalcpu);
+static sysctl_handler(handle_physicalcpu_max);
+static sysctl_handler(handle_logicalcpu);
+static sysctl_handler(handle_logicalcpu_max);
+
+// x86Sim: hw.perflevel0.* (one performance level holding every CPU; Apple silicon has two: P and E cores)
+static const struct known_sysctl sysctls_hw_perflevel0[] = {
+	{ .oid = 1, .type = CTLTYPE_INT, .exttype = "I", .name = "physicalcpu", .handler = handle_physicalcpu },
+	{ .oid = 2, .type = CTLTYPE_INT, .exttype = "I", .name = "physicalcpu_max", .handler = handle_physicalcpu_max },
+	{ .oid = 3, .type = CTLTYPE_INT, .exttype = "I", .name = "logicalcpu", .handler = handle_logicalcpu },
+	{ .oid = 4, .type = CTLTYPE_INT, .exttype = "I", .name = "logicalcpu_max", .handler = handle_logicalcpu_max },
+	{ .oid = 5, .type = CTLTYPE_INT, .exttype = "I", .name = "l1icachesize", .handler = handle_l1icachesize },
+	{ .oid = 6, .type = CTLTYPE_INT, .exttype = "I", .name = "l1dcachesize", .handler = handle_l1dcachesize },
+	{ .oid = 7, .type = CTLTYPE_INT, .exttype = "I", .name = "l2cachesize", .handler = handle_l2cachesize },
+	{ .oid = 8, .type = CTLTYPE_INT, .exttype = "I", .name = "cpusperl2", .handler = handle_logicalcpu },
+	{ .oid = 9, .type = CTLTYPE_STRING, .exttype = "S", .name = "name", .handler = handle_perflevel_name },
+	{ .oid = -1 }
+};
+
 const struct known_sysctl sysctls_hw[] = {
 	{ .oid = HW_AVAILCPU, .type = CTLTYPE_INT, .exttype = "", .name = "availcpu", .handler = handle_availcpu },
 	{ .oid = HW_NCPU, .type = CTLTYPE_INT, .exttype = "", .name = "ncpu", .handler = handle_availcpu },
+	// x86Sim: the cache and timebase keys (an M1's values) and the CPU topology Apple silicon apps read. H264SW (the
+	// software H.264 encoder) aligned its buffers to hw.cachelinesize: with ENOENT that was 0, posix_memalign failed
+	// (EINVAL), the half-built encoder freed its state and the next frame wrote through NULL (AVAssetWriter and
+	// VTCompressionSession crashed).
+	{ .oid = HW_CACHELINE, .type = CTLTYPE_QUAD, .exttype = "Q", .name = "cachelinesize", .handler = handle_cachelinesize },
+	{ .oid = HW_L1ICACHESIZE, .type = CTLTYPE_QUAD, .exttype = "Q", .name = "l1icachesize", .handler = handle_l1icachesize },
+	{ .oid = HW_L1DCACHESIZE, .type = CTLTYPE_QUAD, .exttype = "Q", .name = "l1dcachesize", .handler = handle_l1dcachesize },
+	{ .oid = HW_L2CACHESIZE, .type = CTLTYPE_QUAD, .exttype = "Q", .name = "l2cachesize", .handler = handle_l2cachesize },
+	{ .oid = HW_TB_FREQ, .type = CTLTYPE_QUAD, .exttype = "Q", .name = "tbfrequency", .handler = handle_tbfrequency },
+	{ .oid = _HW_ACTIVECPU, .type = CTLTYPE_INT, .exttype = "I", .name = "activecpu", .handler = handle_availcpu },
+	{ .oid = _HW_NPERFLEVELS, .type = CTLTYPE_INT, .exttype = "I", .name = "nperflevels", .handler = handle_nperflevels },
+	{ .oid = _HW_PERFLEVEL0, .type = CTLTYPE_NODE, .exttype = "", .name = "perflevel0", .subctls = sysctls_hw_perflevel0 },
 	{ .oid = _HW_PHYSICAL_CPU, .type = CTLTYPE_INT, .exttype = "", .name = "physicalcpu", .handler = handle_physicalcpu },
 	{ .oid = _HW_PHYSICAL_CPU_MAX, .type = CTLTYPE_INT, .exttype = "", .name = "physicalcpu_max", .handler = handle_physicalcpu_max },
 	{ .oid = _HW_LOGICAL_CPU, .type = CTLTYPE_INT, .exttype = "", .name = "logicalcpu", .handler = handle_logicalcpu },
@@ -303,5 +344,47 @@ sysctl_handler(handle_optional_zero)
 		return -ENOENT;
 	sysctl_handle_size(sizeof(int));
 	*((int*) old) = 0;
+	return 0;
+}
+
+// x86Sim: XNU's are 64-bit ("Q"); a caller with a 4-byte buffer gets an int (sysconf and older code pass one)
+static long flex64(void* old, unsigned long* oldlen, unsigned long long v)
+{
+	if (old == NULL)
+	{
+		*oldlen = sizeof(unsigned long long);
+		return 0;
+	}
+	if (*oldlen >= sizeof(unsigned long long))
+	{
+		*((unsigned long long*) old) = v;
+		*oldlen = sizeof(unsigned long long);
+	}
+	else if (*oldlen >= sizeof(int))
+	{
+		*((int*) old) = (int) v;
+		*oldlen = sizeof(int);
+	}
+	else
+		return -EINVAL;
+	return 0;
+}
+
+sysctl_handler(handle_cachelinesize) { return flex64(old, oldlen, 128); }
+sysctl_handler(handle_l1icachesize) { return flex64(old, oldlen, 131072); }
+sysctl_handler(handle_l1dcachesize) { return flex64(old, oldlen, 65536); }
+sysctl_handler(handle_l2cachesize) { return flex64(old, oldlen, 4194304); }
+sysctl_handler(handle_tbfrequency) { return flex64(old, oldlen, 24000000); }
+
+sysctl_handler(handle_nperflevels)
+{
+	sysctl_handle_size(sizeof(int));
+	*((int*) old) = 1;
+	return 0;
+}
+
+sysctl_handler(handle_perflevel_name)
+{
+	copyout_string("Performance", (char*) old, oldlen);
 	return 0;
 }
