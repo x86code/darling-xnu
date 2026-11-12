@@ -6,6 +6,7 @@
 #include <sys/errno.h>
 #include <darling/emulation/conversion/errno.h>
 #include <darling/emulation/conversion/network/duct.h>
+#include <darling/emulation/conversion/network/getsockopt.h>
 #include <darling/emulation/linux_premigration/linux-syscalls/linux.h>
 #include <darling/emulation/xnu_syscall/bsd/helper/network/duct.h>
 #include <darling/emulation/xnu_syscall/bsd/helper/bsdthread/cancelable.h>
@@ -74,7 +75,7 @@ long sys_sendmsg_nocancel(int socket, const struct bsd_msghdr* msg, int flags)
 
 		lchdr->cmsg_len = bchdr->cmsg_len + LINUX_BSD_CMSGHDR_SIZE_DIFFERENCE;
 		lchdr->cmsg_level = socket_level_bsd_to_linux(bchdr->cmsg_level);
-		lchdr->cmsg_type = bchdr->cmsg_type;
+		lchdr->cmsg_type = cmsg_type_bsd_to_linux(bchdr->cmsg_level, bchdr->cmsg_type);
 
 		memcpy(lchdr->cmsg_data, bchdr->cmsg_data,
 				bchdr->cmsg_len - sizeof(struct bsd_cmsghdr));

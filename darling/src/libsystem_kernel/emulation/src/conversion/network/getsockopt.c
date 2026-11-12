@@ -127,6 +127,11 @@ int sockopt_bsd_to_linux(int* level, int* optname, void** optval, void* optbuf)
 				*optname = LINUX_IP_DROP_MEMBERSHIP; break;
 			case BSD_IP_RECVTTL:
 				*optname = LINUX_IP_RECVTTL; break;
+			// x86Sim: packet info and TOS on received datagrams (Network.framework's UDP flows)
+			case BSD_IP_PKTINFO:
+				*optname = LINUX_IP_PKTINFO; break;
+			case BSD_IP_RECVTOS:
+				*optname = LINUX_IP_RECVTOS; break;
 			default:
 				return -ENOTSUP;
 		}
@@ -161,10 +166,70 @@ int sockopt_bsd_to_linux(int* level, int* optname, void** optval, void* optbuf)
 				*optname = LINUX_IPV6_2292RTHDR; break;
 			case BSD_IPV6_V6ONLY:
 				*optname = LINUX_IPV6_V6ONLY; break;
+			// x86Sim: RFC 3542 options. Network.framework's UDP listener sets IPV6_RECVPKTINFO; ENOTSUP made it give up
+			// on the socket, so NWListener over UDP never delivered a datagram.
+			case BSD_IPV6_RECVPKTINFO:
+				*optname = LINUX_IPV6_RECVPKTINFO; break;
+			case BSD_IPV6_PKTINFO:
+				*optname = LINUX_IPV6_PKTINFO; break;
+			case BSD_IPV6_RECVHOPLIMIT:
+				*optname = LINUX_IPV6_RECVHOPLIMIT; break;
+			case BSD_IPV6_HOPLIMIT:
+				*optname = LINUX_IPV6_HOPLIMIT; break;
+			case BSD_IPV6_RECVTCLASS:
+				*optname = LINUX_IPV6_RECVTCLASS; break;
+			case BSD_IPV6_TCLASS:
+				*optname = LINUX_IPV6_TCLASS; break;
 			default:
 				return -ENOTSUP;
 		}
 	}
 	
 	return 0;
+}
+
+// x86Sim: what a Linux socket reports as ancillary data, in XNU's numbers (and back for sendmsg). The payloads match:
+// struct in_pktinfo and struct in6_pktinfo have the same layout on both, IPV6_HOPLIMIT / IPV6_TCLASS are ints there
+// and here, IP_TOS / IP_RECVTOS a byte.
+int cmsg_type_linux_to_bsd(int level, int type)
+{
+	if (level == XNU_IPPROTO_IP)
+	{
+		switch (type)
+		{
+			case LINUX_IP_PKTINFO: return BSD_IP_PKTINFO;
+			case LINUX_IP_TOS: return BSD_IP_RECVTOS;
+		}
+	}
+	else if (level == XNU_IPPROTO_IPV6)
+	{
+		switch (type)
+		{
+			case LINUX_IPV6_PKTINFO: return BSD_IPV6_PKTINFO;
+			case LINUX_IPV6_HOPLIMIT: return BSD_IPV6_HOPLIMIT;
+			case LINUX_IPV6_TCLASS: return BSD_IPV6_TCLASS;
+		}
+	}
+	return type;
+}
+
+int cmsg_type_bsd_to_linux(int level, int type)
+{
+	if (level == XNU_IPPROTO_IP)
+	{
+		switch (type)
+		{
+			case BSD_IP_PKTINFO: return LINUX_IP_PKTINFO;
+		}
+	}
+	else if (level == XNU_IPPROTO_IPV6)
+	{
+		switch (type)
+		{
+			case BSD_IPV6_PKTINFO: return LINUX_IPV6_PKTINFO;
+			case BSD_IPV6_HOPLIMIT: return LINUX_IPV6_HOPLIMIT;
+			case BSD_IPV6_TCLASS: return LINUX_IPV6_TCLASS;
+		}
+	}
+	return type;
 }

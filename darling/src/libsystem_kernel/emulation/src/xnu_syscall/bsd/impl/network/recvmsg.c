@@ -99,7 +99,7 @@ long sys_recvmsg_nocancel(int socket, struct bsd_msghdr* msg, int flags)
 
 					bnext->cmsg_len = lnext->cmsg_len - LINUX_BSD_CMSGHDR_SIZE_DIFFERENCE;
 					bnext->cmsg_level = socket_level_linux_to_bsd(lnext->cmsg_level);
-					bnext->cmsg_type = lnext->cmsg_type;
+					bnext->cmsg_type = cmsg_type_linux_to_bsd(bnext->cmsg_level, lnext->cmsg_type);
 
 					// __simple_printf("About to copy %d bytes\n", lnext->cmsg_len - sizeof(struct linux_cmsghdr));
 

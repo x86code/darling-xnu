@@ -95,7 +95,9 @@ enum
 	LINUX_IP_OPTIONS,
 	LINUX_IP_RECVOPTS = 6,
 	LINUX_IP_RETOPTS,
+	LINUX_IP_PKTINFO = 8,
 	LINUX_IP_RECVTTL = 12,
+	LINUX_IP_RECVTOS = 13,
 	LINUX_IP_MULTICAST_IF = 32,
 	LINUX_IP_MULTICAST_TTL,
 	LINUX_IP_MULTICAST_LOOP,
@@ -118,6 +120,8 @@ enum
 	BSD_IP_ADD_MEMBERSHIP,
 	BSD_IP_DROP_MEMBERSHIP,
 	BSD_IP_RECVTTL = 24,
+	BSD_IP_PKTINFO = 26, // also IP_RECVPKTINFO
+	BSD_IP_RECVTOS = 27,
 };
 
 enum
@@ -137,6 +141,12 @@ enum
 	LINUX_IPV6_JOIN_GROUP,
 	LINUX_IPV6_LEAVE_GROUP,
 	LINUX_IPV6_V6ONLY = 26,
+	LINUX_IPV6_RECVPKTINFO = 49,
+	LINUX_IPV6_PKTINFO = 50,
+	LINUX_IPV6_RECVHOPLIMIT = 51,
+	LINUX_IPV6_HOPLIMIT = 52,
+	LINUX_IPV6_RECVTCLASS = 66,
+	LINUX_IPV6_TCLASS = 67,
 };
 
 enum
@@ -154,6 +164,13 @@ enum
 	BSD_IPV6_2292DSTOPTS,
 	BSD_IPV6_2292RTHDR,
 	BSD_IPV6_V6ONLY = 27,
+	// RFC 3542 (XNU's netinet6/in6.h)
+	BSD_IPV6_RECVTCLASS = 35,
+	BSD_IPV6_TCLASS = 36,
+	BSD_IPV6_RECVHOPLIMIT = 37,
+	BSD_IPV6_PKTINFO = 46,
+	BSD_IPV6_HOPLIMIT = 47,
+	BSD_IPV6_RECVPKTINFO = 61,
 };
 
 struct xnu_linger
@@ -163,5 +180,9 @@ struct xnu_linger
 };
 
 int sockopt_bsd_to_linux(int* level, int* optname, void** optval, void* optbuf);
+// x86Sim: control message types (ancillary data of recvmsg / sendmsg) for IPPROTO_IP / IPPROTO_IPV6, whose numbers
+// differ between XNU and Linux; levels are XNU's (the same numbers on both for these two)
+int cmsg_type_linux_to_bsd(int level, int type);
+int cmsg_type_bsd_to_linux(int level, int type);
 
 #endif // DARLING_CONVERSION_NETWORK_GETSOCKOPT
