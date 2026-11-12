@@ -410,9 +410,10 @@ extern long sys_getpid(void);
 static sysctl_handler(handle_osproductversion) {
 	static int simulator = -1;
 	if (simulator < 0) {
-		// x86Sim Platforms 1: tvOS and watchOS simulator processes too (PLATFORM_TVOSSIMULATOR 8, WATCHOSSIMULATOR 9)
+		// x86Sim Platforms 1: tvOS and watchOS simulator processes too (PLATFORM_TVOSSIMULATOR 8, WATCHOSSIMULATOR 9);
+		// Platforms 2: visionOS (PLATFORM_VISIONOSSIMULATOR 12)
 		uint32_t p = _proc_platform(sys_getpid());
-		simulator = p == 7 /* PLATFORM_IOSSIMULATOR */ || p == 8 || p == 9;
+		simulator = p == 7 /* PLATFORM_IOSSIMULATOR */ || p == 8 || p == 9 || p == 12;
 	}
 	copyout_string(simulator ? X86SIM_SIM_HOST_OSPRODUCTVERSION : EMULATED_OSPRODUCTVERSION, (char*)old, oldlen);
 	return 0;
