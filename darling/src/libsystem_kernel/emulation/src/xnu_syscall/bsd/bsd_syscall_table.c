@@ -72,6 +72,7 @@
 #include <darling/emulation/xnu_syscall/bsd/impl/network/recvfrom.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/network/recvmsg.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/network/sendmsg.h>
+#include <darling/emulation/xnu_syscall/bsd/impl/network/msg_x.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/network/sendto.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/network/setsockopt.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/network/shutdown.h>
@@ -452,6 +453,8 @@ void* __bsd_syscall_table[600] = {
 	[375] = sys_kevent_id,
 	[381] = sys___mac_syscall,
 	[479] = sys_openbyid_np, // x86Sim
+	[480] = sys_recvmsg_x, // x86Sim
+	[481] = sys_sendmsg_x, // x86Sim
 	[488] = sys_renameatx_np,
 	[494] = sys_persona,
 	[530] = sys_kqueue_workloop_ctl,
