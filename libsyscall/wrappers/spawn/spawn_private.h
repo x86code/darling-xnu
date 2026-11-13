@@ -56,7 +56,10 @@ int     posix_spawnattr_set_jetsam_ttr_np(const posix_spawnattr_t * __restrict a
 int     posix_spawnattr_set_threadlimit_ext(posix_spawnattr_t * __restrict attr,
     int thread_limit)  __API_AVAILABLE(macos(10.14), ios(12.0), tvos(12.0), watchos(5.0));
 
-#define POSIX_SPAWN_IMPORTANCE_PORT_COUNT 32
+// x86Sim: 128, as the current macOS libsystem_kernel (27.0 26A428 accepts 128, refuses 129 with EINVAL). With 32,
+// launchd_sim's spawn of a job holding more watch ports (SpringBoard, backboardd, Carousel, assistantd) logged
+// "assertion failed: launchd_sim + ...: 0x16" at every boot.
+#define POSIX_SPAWN_IMPORTANCE_PORT_COUNT 128
 int     posix_spawnattr_set_importancewatch_port_np(posix_spawnattr_t * __restrict attr,
     int count, mach_port_t portarray[])  __API_AVAILABLE(macos(10.9), ios(6.0));
 
