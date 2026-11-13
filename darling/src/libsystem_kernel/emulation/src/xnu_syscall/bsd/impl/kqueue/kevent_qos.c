@@ -182,6 +182,7 @@ void kevent_64_to_qos(const struct kevent64_s* ev64, struct kevent_qos_s *ev)
 static libsimple_once_t wq_manager_once = LIBSIMPLE_ONCE_INITIALIZER;
 
 static void wl_post_event(uint64_t id, const struct kevent_qos_s* ev);
+void wq_dbg_line(const char* what, long a, long b, long c);
 
 // kevent64 has no qos field, so remember each knote's qos (it decides
 // whether an event goes to the event manager thread) by (ident, filter, udata)
@@ -194,7 +195,25 @@ struct wq_knote_qos
 	uint32_t qos;
 	// workloop the knote was registered on with kevent_id (0: the workq kqueue)
 	uint64_t workloop;
+	// x86Sim: its ident in the shared kqueue (wl_kq_ident: a workloop's timers get one of their own)
+	uint64_t kq_ident;
 };
+
+/*
+ * x86Sim (2026-11-13): on XNU every workloop is a kqueue of its own, so libdispatch gives the timers of each workloop
+ * and the event manager's the same ident (DISPATCH_TIMER_IDENT). Here all of them are knotes of the one workq
+ * kqueue, which has one knote per (ident, filter): re-arming the manager's timer took over the knote a workloop had
+ * just armed, and that workloop's timers never fired again until something else re-armed them. PineBoard's startup
+ * work then waited 25-30 s (the TV's "hot black" stayed up until the 30 s attention timeout) or for good (a boot
+ * stuck black). A timer's ident means nothing to the kernel: a workloop's timer gets its own in the shared kqueue,
+ * and its events go back to the workloop with the ident it registered (wq_qos_lookup).
+ */
+static uint64_t wl_kq_ident(uint64_t workloop, const struct kevent_qos_s* ch)
+{
+	if (workloop == 0 || ch->filter != EVFILT_TIMER)
+		return ch->ident;
+	return 0x7000000000000000ull | ((workloop << 8) & 0x0fffffffffffff00ull) | (ch->ident & 0xff);
+}
 static struct wq_knote_qos wq_qos_table[WQ_QOS_TABLE_SIZE];
 static libsimple_lock_t wq_qos_lock = LIBSIMPLE_LOCK_INITIALIZER;
 // x86Sim: set once a knote could not be recorded; from then on liveness is unknown
@@ -208,7 +227,7 @@ static struct wq_knote_qos* wq_qos_find_locked(uint64_t ident, int16_t filter, u
 	for (i = 0; i < WQ_QOS_TABLE_SIZE; i++)
 	{
 		struct wq_knote_qos* e = &wq_qos_table[i];
-		if (!e->used || e->ident != ident || e->filter != filter)
+		if (!e->used || (e->ident != ident && e->kq_ident != ident) || e->filter != filter)
 			continue;
 		if (e->udata == udata)
 			return e;
@@ -249,6 +268,7 @@ static void wq_qos_record(const struct kevent_qos_s* ch, uint64_t workloop)
 		if (e != NULL)
 		{
 			e->ident = ch->ident;
+			e->kq_ident = wl_kq_ident(workloop, ch);
 			e->filter = ch->filter;
 			e->udata = ch->udata;
 			e->qos = ch->qos;
@@ -295,7 +315,7 @@ static bool wq_knote_live(const struct kevent_qos_s* ev)
 	return live;
 }
 
-static uint32_t wq_qos_lookup(const struct kevent_qos_s* ev, uint64_t* workloop)
+static uint32_t wq_qos_lookup(struct kevent_qos_s* ev, uint64_t* workloop)
 {
 	struct wq_knote_qos* e;
 	uint32_t qos = 0;
@@ -307,6 +327,7 @@ static uint32_t wq_qos_lookup(const struct kevent_qos_s* ev, uint64_t* workloop)
 	{
 		qos = e->qos;
 		*workloop = e->workloop;
+		ev->ident = e->ident; // x86Sim: as registered (wl_kq_ident)
 	}
 	libsimple_lock_unlock(&wq_qos_lock);
 	return qos;
@@ -325,9 +346,16 @@ static int wq_apply_changes(const struct kevent_qos_s* changelist, int nchanges,
 		if (!(changelist[i].flags & EV_DELETE))
 			wq_qos_record(&changelist[i], workloop);
 		kevent_qos_to_64(&changelist[i], &ch64[i]);
+		ch64[i].ident = wl_kq_ident(workloop, &changelist[i]); // x86Sim
 		ch64[i].flags |= EV_RECEIPT;
+		if (changelist[i].filter == EVFILT_TIMER)
+			wq_dbg_line("timer-change", (long) changelist[i].ident, ((long) (uint16_t) changelist[i].flags << 32) | changelist[i].fflags, (long) changelist[i].data);
 	}
 	nr = sys_kevent64(default_kq, ch64, nchanges, rc, nchanges, 0, &zero);
+	// x86Sim: receipts carry the ident the caller registered (wl_kq_ident)
+	for (i = 0; i < nr && i < nchanges; i++)
+		if (rc[i].ident == ch64[i].ident && ch64[i].ident != changelist[i].ident)
+			rc[i].ident = changelist[i].ident;
 	// x86Sim: a knote stays live until its delete succeeds (or it is not there at all): a
 	// deferred delete (EINPROGRESS) still has its in-flight event to deliver
 	for (i = 0; i < nchanges; i++)
@@ -387,6 +415,8 @@ static void wq_deliver(struct kevent_qos_s* events, int n, int priority)
 	struct wq_batch_slot* slot = NULL;
 	int i, m = 0;
 
+	if (wq_batch_free_sem <= 0)
+		wq_dbg_line("deliver-wait-slot", n, priority, wq_batch_free_sem);
 	sem_down(&wq_batch_free_sem, -1);
 	libsimple_lock_lock(&wq_batch_lock);
 	for (i = 0; i < WQ_BATCH_SLOTS; i++)
@@ -445,15 +475,29 @@ static void wq_dbg_event(const struct kevent64_s* ev, bool live, uint32_t qos, u
 			wq_dbg_fd = sys_open(path, O_WRONLY | O_CREAT | O_APPEND, 0644);
 		}
 	}
-	if (wq_dbg_fd < 0)
+	if (wq_dbg_fd < 0 || ev == NULL)
 		return;
 	wq_dbg_n++;
-	if (wq_dbg_n > 300 && wq_dbg_n % 20000)
+	if (wq_dbg_n > 20000)
 		return;
-	__simple_fprintf(wq_dbg_fd, "#%lu ident=%llx filter=%d flags=0x%x fflags=0x%x data=%lld udata=%llx ext0=%llx ext1=%llx live=%d qos=0x%x wl=%llx\n",
-		wq_dbg_n, (unsigned long long) ev->ident, ev->filter, ev->flags, ev->fflags, (long long) ev->data,
+	struct { long s; long ns; } ts = {0, 0};
+	LINUX_SYSCALL(__NR_clock_gettime, 0 /* CLOCK_REALTIME */, &ts);
+	__simple_fprintf(wq_dbg_fd, "%ld.%ld ev #%lu ident=%llx filter=%d flags=0x%x fflags=0x%x data=%lld udata=%llx ext0=%llx ext1=%llx live=%d qos=0x%x wl=%llx\n",
+		ts.s, ts.ns / 1000000 + 1000, wq_dbg_n, (unsigned long long) ev->ident, ev->filter, ev->flags, ev->fflags, (long long) ev->data,
 		(unsigned long long) ev->udata, (unsigned long long) ev->ext[0], (unsigned long long) ev->ext[1], live, qos,
 		(unsigned long long) workloop);
+}
+
+// x86Sim (debug, same switch): one timestamped line (ms field is 1000 + ms)
+void wq_dbg_line(const char* what, long a, long b, long c)
+{
+	if (wq_dbg_fd == -2)
+		wq_dbg_event(NULL, false, 0, 0);
+	if (wq_dbg_fd < 0)
+		return;
+	struct { long s; long ns; } ts = {0, 0};
+	LINUX_SYSCALL(__NR_clock_gettime, 0 /* CLOCK_REALTIME */, &ts);
+	__simple_fprintf(wq_dbg_fd, "%ld.%ld %s %lx %lx %lx\n", ts.s, ts.ns / 1000000 + 1000, what, a, b, c);
 }
 
 static void* wq_kevent_manager(void* unused)
@@ -655,7 +699,12 @@ static uint32_t wl_self(void)
 	return wl_port_mask((uintptr_t) _pthread_getspecific_direct(_PTHREAD_TSD_SLOT_MACH_THREAD_SELF));
 }
 
-#define WLTRACE(...) // WLLOG(__VA_ARGS__)
+// x86Sim (debug): with /private/var/tmp/x86sim-wqdbg, the workloop trace goes to the same timestamped log
+static char wl_trace_buf[256];
+#define WLTRACE(...) do { \
+		__simple_snprintf(wl_trace_buf, sizeof(wl_trace_buf), __VA_ARGS__); \
+		wq_dbg_line(wl_trace_buf, 0, 0, 0); \
+	} while (0)
 
 static struct workloop* wl_get_locked(uint64_t id)
 {

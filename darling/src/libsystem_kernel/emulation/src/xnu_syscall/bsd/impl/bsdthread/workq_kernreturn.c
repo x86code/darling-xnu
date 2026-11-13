@@ -29,6 +29,7 @@
 #include <darling/emulation/common/tsd.h>
 
 #define WQ_MAX_THREADS	64
+extern void wq_dbg_line(const char* what, long a, long b, long c); // x86Sim debug (kevent_qos.c)
 
 #define WQOPS_QUEUE_ADD 1
 #define WQOPS_QUEUE_REMOVE 2
@@ -289,6 +290,8 @@ static void wq_spawn(int flags, struct wq_kevent_data* wq_event, int affinity)
 static void wq_start_one(int flags, struct wq_kevent_data* wq_event)
 {
 	{
+		if (flags & WQ_FLAG_THREAD_EVENT_MANAGER)
+			wq_dbg_line("mgr-start", (long) wq_event, flags, workq_sem);
 		sem_down(&workq_sem, -1);
 
 		os_unfair_lock_lock(&workq_parked_lock);
@@ -364,6 +367,7 @@ static bool wq_mgr_claim(struct wq_kevent_data* wq_event)
 		claimed = true;
 	}
 	libsimple_lock_unlock(&wq_mgr_lock);
+	wq_dbg_line(claimed ? "mgr-claim" : "mgr-queued", (long) wq_event, wq_mgr_npending_kevent, wq_mgr_pending_plain);
 	return claimed;
 }
 
@@ -390,6 +394,7 @@ static void wq_mgr_release(void)
 	else
 		wq_mgr_active = false;
 	libsimple_lock_unlock(&wq_mgr_lock);
+	wq_dbg_line("mgr-release", (long) next, plain, wq_mgr_npending_kevent);
 
 	if (next != NULL)
 		wq_spawn(WQ_FLAG_THREAD_NEWSPI | WQ_FLAG_THREAD_EVENT_MANAGER | WQ_FLAG_THREAD_KEVENT, next, 1);
