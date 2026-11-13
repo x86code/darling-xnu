@@ -13,6 +13,7 @@
 #include <darling/emulation/conversion/duct_errno.h>
 #include <darling/emulation/linux_premigration/elfcalls_wrapper.h>
 #include <darling/emulation/other/mach/lkm.h>
+#include <darling/emulation/other/mach/foreign_hook.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/unistd/close.h>
 #include <darling/emulation/common/guarded/table.h>
 #include <darling/emulation/xnu_syscall/bsd/helper/network/socktables.h>
@@ -21,10 +22,41 @@
 
 extern _libkernel_functions_t _libkernel_functions;
 
+// x86Sim (2026-11-13): libkqueue's child reset (libkqueue common/kqueue.c). Darling's libSystem.B (its libkqueue)
+// overrides this weak default; the simulator's libkqueue_sim is reached by its foreign hook. Both are called first
+// in the child, before guard_table_postfork_child closes descriptors (close() -> kqueue_closed_fd takes their locks).
+__attribute__((weak))
+__attribute__((visibility("default")))
+void kqueue_atfork_child_reset(void)
+{
+}
+
+// the simulator's hook is looked up in the parent (a dlsym through the guest's dyld takes its locks: not in the child)
+static void (*sim_kqueue_child_reset)(void);
+static int sim_kqueue_child_reset_resolved;
+
+static void kqueue_child_reset_resolve(void)
+{
+#ifndef VARIANT_DYLD
+	if (!sim_kqueue_child_reset_resolved) {
+		sim_kqueue_child_reset = (void (*)(void)) darling_foreign_hook("__darling_sim_kqueue_atfork_child");
+		sim_kqueue_child_reset_resolved = 1;
+	}
+#endif
+}
+
+static void kqueue_child_reset_all(void)
+{
+	kqueue_atfork_child_reset();
+	if (sim_kqueue_child_reset)
+		sim_kqueue_child_reset();
+}
+
 long sys_fork(void)
 {
 	int ret;
 	int wdfd = get_perthread_wd();
+	kqueue_child_reset_resolve();
 
 #ifdef SYS_fork
 	ret = LINUX_SYSCALL(__NR_fork);
@@ -36,6 +68,11 @@ long sys_fork(void)
 	else if (ret == 0)
 	{
 		// in the child
+
+		// x86Sim (2026-11-13): mldr's locks first (elfcalls.h postfork_child): the guard table below closes the
+		// parent's descriptors through mldr's socket bitmap, whose lock another thread may have held at the fork
+		__darling_elf_postfork_child();
+		kqueue_child_reset_all();
 
 		// the old RPC FD will be closed in `guard_table_postfork_child`;
 		// we don't need to close it ourselves.
