@@ -248,6 +248,20 @@ long sys_x86sim_proc_rlimit_control(int pid, int flavor, void* arg)
 	return 0;
 }
 
+// process_policy (323, installd, datamigrator: proc_set_cpumon_params / proc_disable_wakemon and the like, via
+// libsystem's proc_* calls): CPU / wakeup monitors, background and app-type policies. Nothing here enforces them:
+// changes are accepted (0) as XNU does for a valid request; a GET has nothing to report (EINVAL, as XNU for a policy
+// with no state). Was ENOSYS ("Unimplemented syscall" in the census).
+long sys_x86sim_process_policy(int scope, int action, int policy, int subtype, void* attrp, int pid,
+	unsigned long long tid)
+{
+	if (action < 1 || action > 8)
+		return -EINVAL;
+	if (action == 4 /* PROC_POLICY_ACTION_GET */)
+		return -EINVAL;
+	return 0;
+}
+
 // telemetry (451, runningboardd): no telemetry subsystem: ENOTSUP (XNU without CONFIG_TELEMETRY).
 long sys_x86sim_telemetry(void)
 {

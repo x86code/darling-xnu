@@ -231,6 +231,7 @@ long sys___mac_syscall(const char* policy, int call, void* arg); // x86Sim
 long sys_persona(uint32_t operation, uint32_t flags, void* info, void* id, void* idlen, char* path); // x86Sim
 long sys_memorystatus_control(uint32_t command, int32_t pid, uint32_t flags, void* buffer, unsigned long size); // x86Sim
 long sys_x86sim_quotactl(void); // x86Sim Align 1 (process/memorystatus.c)
+long sys_x86sim_process_policy(int scope, int action, int policy, int subtype, void* attrp, int pid, unsigned long long tid); // x86Sim (process/memorystatus.c)
 long sys_x86sim_proc_rlimit_control(int pid, int flavor, void* arg); // x86Sim Align 1
 long sys_x86sim_telemetry(void); // x86Sim Align 1
 uint64_t sys_x86sim_thread_selfusage(void); // x86Sim Align 1
@@ -418,6 +419,7 @@ void* __bsd_syscall_table[600] = {
 	[310] = sys_getsid,
 	[312] = sys_psynch_cvclrprepost,
 	[322] = sys_iopolicysys,
+	[323] = sys_x86sim_process_policy, // x86Sim
 	[327] = sys_issetugid,
 	[328] = sys_pthread_kill,
 	[329] = sys_sigprocmask, // __pthread_sigmask
