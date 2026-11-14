@@ -12,6 +12,8 @@
 #include <darling/emulation/xnu_syscall/bsd/impl/mman/mman.h>
 #include <darling/emulation/xnu_syscall/bsd/impl/stat/lstat.h>
 #include <darling/emulation/conversion/stat/common.h>
+#include <darling/emulation/linux_premigration/linux-syscalls/linux.h>
+#include <darling/emulation/xnu_syscall/bsd/helper/misc/fdpath.h>
 
 // x86Sim: XNU resolves (fsid, object ID) to a path in the file system. Linux cannot look up an
 // inode by number, so we answer for the IDs this process has seen through getattrlist
@@ -93,6 +95,17 @@ static unsigned int fsgp_sh_slot(unsigned int dev, unsigned long long ino)
 	return (unsigned int) (h >> 40) % FSGP_SH_SLOTS;
 }
 
+static struct fsgp_shared* fsgetpath_shared_table_public(void) { return fsgp_shared_table(); }
+// the shared slot of (dev, ino) when it holds that object
+static struct fsgp_shared* fsgetpath_shared_known(unsigned int dev, unsigned long long ino)
+{
+	struct fsgp_shared* t = ino ? fsgp_shared_table() : NULL;
+	if (!t)
+		return NULL;
+	struct fsgp_shared* e = &t[fsgp_sh_slot(dev, ino)];
+	return (__atomic_load_n(&e->ino, __ATOMIC_ACQUIRE) == ino && e->dev == dev) ? e : NULL;
+}
+
 void fsgetpath_remember(unsigned int dev, unsigned long long ino, const char* path)
 {
 	{
@@ -126,6 +139,130 @@ void fsgetpath_remember(unsigned int dev, unsigned long long ino, const char* pa
 }
 
 static long fsgetpath_volume_root(const char* buf, unsigned long size, unsigned int dev);
+
+// x86Sim: XNU's fsgetpath follows an object wherever it is renamed to; ours answers from the paths remembered when
+// IDs went out, re-checked with lstat. So a renamed file's ID resolved to nothing (ENOENT): a bookmark to a file
+// that was renamed (CFURL then resolves it by file ID) failed "The file doesn't exist", where Apple's resolves to
+// the new name. sys_renameat / renameatx_np now move the remembered path of the object (and of every entry under a
+// renamed directory) to the new location.
+#define FSGP_LINUX_O_PATH 010000000
+#define FSGP_LINUX_O_NOFOLLOW 0400000
+#define FSGP_LINUX_O_CLOEXEC 02000000
+#define FSGP_LINUX_AT_SYMLINK_NOFOLLOW 0x100
+
+static int fsgp_guest_path(int ldfd, const char* lpath, char* out, unsigned long size)
+{
+	int fd = LINUX_SYSCALL(__NR_openat, ldfd, lpath, FSGP_LINUX_O_PATH | FSGP_LINUX_O_NOFOLLOW | FSGP_LINUX_O_CLOEXEC, 0);
+	if (fd < 0)
+		return -1;
+	int rv = fdpath(fd, out, size);
+	LINUX_SYSCALL(__NR_close, fd);
+	return rv < 0 ? -1 : 0;
+}
+
+void fsgetpath_rename_prepare(int ldfd, const char* lpath, struct fsgp_rename* r)
+{
+	struct linux_stat lst;
+	r->known = r->isdir = 0;
+	r->oldpath[0] = 0;
+	if (LINUX_SYSCALL(__NR_newfstatat, ldfd, lpath, &lst, FSGP_LINUX_AT_SYMLINK_NOFOLLOW) < 0)
+		return;
+	r->dev = (unsigned int) lst.st_dev;
+	r->ino = lst.st_ino;
+	r->isdir = (lst.st_mode & 0170000) == 0040000;
+	struct fsgp_shared* t = fsgetpath_shared_known(r->dev, r->ino);
+	if (t)
+	{
+		unsigned int len = t->len;
+		if (len < sizeof(r->oldpath) && len < FSGP_SH_PATH)
+		{
+			for (unsigned int i = 0; i < len; i++)
+				r->oldpath[i] = t->path[i];
+			r->oldpath[len] = 0;
+			r->known = 1;
+		}
+	}
+	else
+	{
+		struct fsgp_entry* e = &fsgp_cache[fsgp_slot(r->dev, r->ino)];
+		fsgp_acquire();
+		if (e->ino == r->ino && e->dev == r->dev)
+		{
+			__SIZE_TYPE__ len = __simple_strlen(e->path);
+			for (__SIZE_TYPE__ i = 0; i <= len; i++)
+				r->oldpath[i] = e->path[i];
+			r->known = 1;
+		}
+		fsgp_release();
+	}
+	// a directory's own ID need not have gone out for IDs under it to have: its old path for the prefix rewrite
+	if (!r->known && r->isdir && fsgp_guest_path(ldfd, lpath, r->oldpath, sizeof(r->oldpath)) < 0)
+		r->oldpath[0] = 0;
+}
+
+static int fsgp_rebase(char* dst, unsigned long size, const char* path, __SIZE_TYPE__ oldlen, const char* newpath)
+{
+	// path = <old>/<rest> -> <new>/<rest>
+	__SIZE_TYPE__ nlen = __simple_strlen(newpath), rlen = __simple_strlen(path + oldlen);
+	if (nlen + rlen + 1 > size)
+		return -1;
+	for (__SIZE_TYPE__ i = 0; i < nlen; i++)
+		dst[i] = newpath[i];
+	for (__SIZE_TYPE__ i = 0; i <= rlen; i++)
+		dst[nlen + i] = path[oldlen + i];
+	return 0;
+}
+
+void fsgetpath_rename_done(int ldfd, const char* lpath, const struct fsgp_rename* r)
+{
+	if (!r->known && !(r->isdir && r->oldpath[0]))
+		return;
+	char newpath[FSGP_PATH];
+	if (fsgp_guest_path(ldfd, lpath, newpath, sizeof(newpath)) < 0)
+		return;
+	if (r->known)
+		fsgetpath_remember(r->dev, r->ino, newpath);
+	if (!r->isdir || !r->oldpath[0])
+		return;
+	__SIZE_TYPE__ oldlen = __simple_strlen(r->oldpath);
+	if (oldlen < 2)
+		return;
+	struct fsgp_shared* t = fsgetpath_shared_table_public();
+	for (unsigned int i = 0; t && i < FSGP_SH_SLOTS; i++)
+	{
+		struct fsgp_shared* e = &t[i];
+		unsigned long long ino = __atomic_load_n(&e->ino, __ATOMIC_ACQUIRE);
+		unsigned int len = e->len;
+		if (!ino || e->dev != r->dev || len <= oldlen || len >= FSGP_SH_PATH || e->path[oldlen] != '/')
+			continue;
+		int match = 1;
+		for (__SIZE_TYPE__ k = 0; k < oldlen && match; k++)
+			match = e->path[k] == r->oldpath[k];
+		if (!match)
+			continue;
+		char old[FSGP_SH_PATH], moved[FSGP_SH_PATH];
+		for (unsigned int k = 0; k < len; k++)
+			old[k] = e->path[k];
+		old[len] = 0;
+		if (fsgp_rebase(moved, sizeof(moved), old, oldlen, newpath) == 0 && e->ino == ino)
+			fsgetpath_remember(r->dev, ino, moved);
+	}
+	fsgp_acquire();
+	for (unsigned int i = 0; i < FSGP_SLOTS; i++)
+	{
+		struct fsgp_entry* e = &fsgp_cache[i];
+		if (!e->ino || e->dev != r->dev || e->path[oldlen] != '/' || __simple_strlen(e->path) <= oldlen)
+			continue;
+		int match = 1;
+		for (__SIZE_TYPE__ k = 0; k < oldlen && match; k++)
+			match = e->path[k] == r->oldpath[k];
+		char moved[FSGP_PATH];
+		if (match && fsgp_rebase(moved, sizeof(moved), e->path, oldlen, newpath) == 0)
+			for (__SIZE_TYPE__ k = 0, n = __simple_strlen(moved); k <= n; k++)
+				e->path[k] = moved[k];
+	}
+	fsgp_release();
+}
 
 long sys_fsgetpath(const char* buf, unsigned long size, void* fsid, unsigned long long objid)
 {

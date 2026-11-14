@@ -8,6 +8,7 @@
 #include <darling/emulation/linux_premigration/linux-syscalls/linux.h>
 #include <darling/emulation/conversion/common_at.h>
 #include <darling/emulation/linux_premigration/vchroot_expand.h>
+#include <darling/emulation/xnu_syscall/bsd/impl/misc/fsgetpath.h>
 
 extern char* strcpy(char* dst, const char* src);
 
@@ -33,11 +34,16 @@ long sys_renameat(int oldfd, const char* oldpath, int newfd, const char* newpath
 	if (ret < 0)
 		return errno_linux_to_bsd(ret);
 
+	// x86Sim: IDs handed out for the object (fsgetpath, bookmarks) follow it to its new path
+	struct fsgp_rename fr;
+	fsgetpath_rename_prepare(vc.dfd, vc.path, &fr);
+
 	ret = LINUX_SYSCALL(__NR_renameat, vc.dfd, vc.path, vc2.dfd, vc2.path);
 
 	if (ret < 0)
 		return errno_linux_to_bsd(ret);
 
+	fsgetpath_rename_done(vc2.dfd, vc2.path, &fr);
 	return 0;
 }
 
@@ -83,9 +89,19 @@ long sys_renameatx_np(int oldfd, const char* oldpath, int newfd, const char* new
 	if (ret < 0)
 		return errno_linux_to_bsd(ret);
 
+	// x86Sim: IDs handed out follow the objects (both of them for a swap)
+	struct fsgp_rename fr, fr2;
+	fsgetpath_rename_prepare(vc.dfd, vc.path, &fr);
+	fr2.known = fr2.isdir = 0;
+	if (lflags == LINUX_RENAME_EXCHANGE)
+		fsgetpath_rename_prepare(vc2.dfd, vc2.path, &fr2);
+
 	ret = LINUX_SYSCALL(__NR_renameat2, vc.dfd, vc.path, vc2.dfd, vc2.path, lflags);
 	if (ret < 0)
 		return errno_linux_to_bsd(ret);
 
+	fsgetpath_rename_done(vc2.dfd, vc2.path, &fr);
+	if (lflags == LINUX_RENAME_EXCHANGE)
+		fsgetpath_rename_done(vc.dfd, vc.path, &fr2);
 	return 0;
 }
